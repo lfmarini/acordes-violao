@@ -220,7 +220,7 @@ export function Fretboard({
               exit={{ opacity: 0 }}
               height={r * 2}
               rx={r}
-              fill="rgba(229,233,240,0.28)"
+              fill="rgba(229,233,240,0.42)"
               stroke="rgba(255,255,255,0.75)"
               strokeWidth={2}
             />
