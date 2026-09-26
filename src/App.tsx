@@ -2,7 +2,10 @@ import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react'
 import { ChordPicker } from './components/ChordPicker'
 import { Fretboard } from './components/Fretboard'
+import { CircleOfFifths } from './components/CircleOfFifths'
+import { HarmonicField } from './components/HarmonicField'
 import { TheoryPanel } from './components/TheoryPanel'
+import { defaultMode, type Mode } from './lib/harmony'
 import { VariationsBar } from './components/VariationsBar'
 import { STRUM_DELAY_MS, STRUM_MAX_MS, STRUM_MIN_MS, playShape, setVolume } from './lib/audio'
 import { QUALITIES, chordDisplayName, shapesFor, type ChordRef } from './lib/chords'
@@ -30,12 +33,15 @@ export default function App() {
   // Quantas vezes escolhi a posição aberta vs. outras (para abrir já na preferida).
   const [openStats, setOpenStats] = useStoredState('preferencia-aberta', { open: 1, other: 0 })
   const [highlight, setHighlight] = useState<number | null>(null)
+  // Tonalidade do campo harmônico: segue o acorde, mas pode ser trocada à mão.
+  const [modeOverride, setModeOverride] = useState<Mode | null>(null)
   const [plucked, setPlucked] = useState<Record<number, number>>({})
   const [bgReady, setBgReady] = useState(false)
 
   const chord = useMemo(() => toRef(stored), [stored])
   const shapes = useMemo(() => shapesFor(chord), [chord])
   const analysis = useMemo(() => analyze(chord), [chord])
+  const mode = modeOverride ?? defaultMode(chord)
 
   const preferredIndex = useCallback(
     (list: typeof shapes) => {
@@ -56,6 +62,7 @@ export default function App() {
     setStored({ root: c.root, q: c.quality.id })
     setVariation({ key: keyOf(c), index: preferredIndex(shapesFor(c)) })
     setHighlight(null)
+    setModeOverride(null)
   }
 
   const selectVariation = useCallback(
@@ -287,7 +294,11 @@ export default function App() {
             </div>
           </section>
 
-          <TheoryPanel chord={chord} analysis={analysis} highlight={highlight} onHighlight={setHighlight} />
+          <div className="flex min-w-0 flex-col gap-6">
+            <TheoryPanel chord={chord} analysis={analysis} highlight={highlight} onHighlight={setHighlight} />
+            <HarmonicField chord={chord} mode={mode} onMode={setModeOverride} onPick={changeChord} />
+            <CircleOfFifths chord={chord} mode={mode} onPick={changeChord} />
+          </div>
         </div>
       </div>
     </MotionConfig>

@@ -30,6 +30,10 @@ e no computador.
   cada corda aparecem a nota que soa e a frequência.
 - **Velocidade do ataque**: um cursor vai de 10 ms (rápido) a 100 ms (lento)
   entre uma corda e a próxima; o meio é 32 ms.
+- **Campo harmônico**: os 7 acordes do tom do acorde escolhido (I tônica,
+  II sobretônica, III mediante, IV subdominante, V dominante, VI
+  sobredominante, VII sensível), em tríade e com sétima, no tom maior ou menor.
+- **Círculo de quintas** com o tom destacado e os vizinhos do campo harmônico.
 - **Favoritos** com estrela e lembrança do último acorde, tudo salvo no navegador.
 
 ## Tecnologias
@@ -49,6 +53,7 @@ vite-plugin-pwa (modo offline).
 | Cores de cada grau | `src/lib/theory.ts` |
 | Tradução da cifra brasileira | `src/lib/parser.ts` |
 | Qualidades de acorde da lista | `src/lib/chords.ts` |
+| Campo harmônico | `src/lib/harmony.ts` |
 | Desenho do braço | `src/components/Fretboard.tsx` |
 
 ## Rodando no computador
