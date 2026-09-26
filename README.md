@@ -34,6 +34,9 @@ e no computador.
   II sobretônica, III mediante, IV subdominante, V dominante, VI
   sobredominante, VII sensível), em tríade e com sétima, no tom maior ou menor.
 - **Círculo de quintas** com o tom destacado e os vizinhos do campo harmônico.
+- **Capturar acorde** (tipo Shazam): o app ouve o violão pelo microfone,
+  descobre as notas que estão soando e mostra os acordes mais prováveis. O som
+  é analisado só no navegador, nada é enviado para a internet.
 - **Favoritos** com estrela e lembrança do último acorde, tudo salvo no navegador.
 
 ## Tecnologias
@@ -54,6 +57,7 @@ vite-plugin-pwa (modo offline).
 | Tradução da cifra brasileira | `src/lib/parser.ts` |
 | Qualidades de acorde da lista | `src/lib/chords.ts` |
 | Campo harmônico | `src/lib/harmony.ts` |
+| Reconhecimento de acordes pelo som | `src/lib/recognize.ts` |
 | Desenho do braço | `src/components/Fretboard.tsx` |
 
 ## Rodando no computador
@@ -67,7 +71,8 @@ npm run dev
 
 Outros comandos: `npm run build` (gera a versão final), `npm run testar`
 (confere o tradutor de cifras com uma lista de acordes), `npm run afinacao`
-(mede a frequência do som gerado em cada corda) e `npm run icones`
+(mede a frequência do som gerado em cada corda) e `npm run reconhecimento`
+(testa o reconhecedor com acordes sintetizados) e `npm run icones`
 (gera os ícones do app).
 
 ## Publicação

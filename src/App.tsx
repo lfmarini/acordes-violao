@@ -1,5 +1,6 @@
 import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react'
+import { ChordCapture } from './components/ChordCapture'
 import { ChordPicker } from './components/ChordPicker'
 import { Fretboard } from './components/Fretboard'
 import { CircleOfFifths } from './components/CircleOfFifths'
@@ -33,6 +34,7 @@ export default function App() {
   // Quantas vezes escolhi a posição aberta vs. outras (para abrir já na preferida).
   const [openStats, setOpenStats] = useStoredState('preferencia-aberta', { open: 1, other: 0 })
   const [highlight, setHighlight] = useState<number | null>(null)
+  const [captureOpen, setCaptureOpen] = useState(false)
   // Tonalidade do campo harmônico: segue o acorde, mas pode ser trocada à mão.
   const [modeOverride, setModeOverride] = useState<Mode | null>(null)
   const [plucked, setPlucked] = useState<Record<number, number>>({})
@@ -124,7 +126,19 @@ export default function App() {
             </h1>
             <p className="text-sm text-slate-400">Forma no braço, teoria de cada grau e som.</p>
           </div>
+          <button
+            onClick={() => setCaptureOpen(true)}
+            className="flex shrink-0 items-center gap-2 rounded-full bg-gradient-to-r from-accent to-accent-2 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-accent/30 transition hover:scale-105 active:scale-95"
+          >
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden>
+              <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z" />
+            </svg>
+            <span>
+              Capturar<span className="hidden sm:inline"> acorde</span>
+            </span>
+          </button>
         </header>
+        <ChordCapture open={captureOpen} onClose={() => setCaptureOpen(false)} onPick={changeChord} />
 
         <ChordPicker chord={chord} onChange={changeChord} />
 
