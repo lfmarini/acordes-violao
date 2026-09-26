@@ -4,14 +4,13 @@ import { ChordPicker } from './components/ChordPicker'
 import { Fretboard } from './components/Fretboard'
 import { TheoryPanel } from './components/TheoryPanel'
 import { VariationsBar } from './components/VariationsBar'
-import { playShape, setVolume } from './lib/audio'
+import { STRUM_DELAY_MS, STRUM_MAX_MS, STRUM_MIN_MS, playShape, setVolume } from './lib/audio'
 import { QUALITIES, chordDisplayName, shapesFor, type ChordRef } from './lib/chords'
 import { useStoredState } from './lib/storage'
 import { DEGREES, analyze } from './lib/theory'
 
-// A parte 3D fica fora do pacote inicial: só é baixada quando for usada.
+// O fundo 3D fica fora do pacote inicial: só é baixado depois que a tela aparece.
 const Background3D = lazy(() => import('./three/Background3D'))
-const Neck3D = lazy(() => import('./three/Neck3D'))
 
 type StoredChord = { root: string; q: string }
 const toRef = (c: StoredChord): ChordRef => ({
@@ -26,10 +25,10 @@ export default function App() {
   const [lefty, setLefty] = useStoredState('canhoto', false)
   const [volume, setVol] = useStoredState('volume', 0.8)
   const [muted, setMuted] = useStoredState('mudo', false)
+  const [strumMs, setStrumMs] = useStoredState('velocidade-ataque', STRUM_DELAY_MS)
   const [favorites, setFavorites] = useStoredState<string[]>('favoritos', [])
   // Quantas vezes escolhi a posição aberta vs. outras (para abrir já na preferida).
   const [openStats, setOpenStats] = useStoredState('preferencia-aberta', { open: 1, other: 0 })
-  const [show3D, setShow3D] = useState(false)
   const [highlight, setHighlight] = useState<number | null>(null)
   const [plucked, setPlucked] = useState<Record<number, number>>({})
   const [bgReady, setBgReady] = useState(false)
@@ -93,7 +92,7 @@ export default function App() {
   const play = () => {
     if (!shape) return
     setPlucked({})
-    playShape(shape, volume, muted, (s) => setPlucked((p) => ({ ...p, [s]: performance.now() })))
+    playShape(shape, volume, muted, strumMs, (s) => setPlucked((p) => ({ ...p, [s]: performance.now() })))
   }
 
   const isFav = favorites.includes(keyOf(chord))
@@ -190,7 +189,6 @@ export default function App() {
             <div className="flex w-full max-w-[460px] flex-wrap items-center gap-2 text-sm">
               <Toggle on={fingers} onClick={() => setFingers(!fingers)} label={`Dedos: ${fingers ? 'ligado' : 'desligado'}`} />
               <Toggle on={lefty} onClick={() => setLefty(!lefty)} label={lefty ? 'Canhoto' : 'Destro'} />
-              <Toggle on={show3D} onClick={() => setShow3D(!show3D)} label="Visão 3D" />
               <div className="ml-auto flex items-center gap-2">
                 <button
                   onClick={() => setMuted(!muted)}
@@ -215,23 +213,42 @@ export default function App() {
               </div>
             </div>
 
+            {/* Velocidade do ataque: o meio do cursor é o valor padrão */}
+            <label className="flex w-full max-w-[460px] items-center gap-3 text-sm text-slate-300">
+              <span className="shrink-0">Ataque</span>
+              <span className="shrink-0 text-xs text-slate-500">rápido</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={strumToSlider(strumMs)}
+                onChange={(e) => setStrumMs(sliderToStrum(Number(e.target.value)))}
+                aria-label="Velocidade do ataque"
+                aria-valuetext={`${strumMs} milissegundos entre as cordas`}
+                className="min-w-0 flex-1 accent-[#7c5cff]"
+              />
+              <span className="shrink-0 text-xs text-slate-500">lento</span>
+              <button
+                onClick={() => setStrumMs(STRUM_DELAY_MS)}
+                title="Voltar ao padrão"
+                className="w-14 shrink-0 rounded-md bg-white/5 py-0.5 text-center text-xs tabular-nums text-slate-300 hover:bg-white/10"
+              >
+                {strumMs} ms
+              </button>
+            </label>
+
             {/* O herói da tela: o braço */}
             <div className="w-full max-w-[460px]">
-              {show3D ? (
-                <Suspense fallback={<div className="grid aspect-[3/4] place-items-center text-slate-500">Carregando 3D…</div>}>
-                  <Neck3D shape={shape} analysis={analysis} lefty={lefty} />
-                </Suspense>
-              ) : (
-                <Fretboard
-                  shape={shape}
-                  analysis={analysis}
-                  showFingers={fingers}
-                  lefty={lefty}
-                  highlight={highlight}
-                  plucked={plucked}
-                  className="w-full"
-                />
-              )}
+              <Fretboard
+                shape={shape}
+                analysis={analysis}
+                showFingers={fingers}
+                lefty={lefty}
+                highlight={highlight}
+                plucked={plucked}
+                className="w-full"
+              />
               <p className="mt-1 flex justify-between text-xs text-slate-400">
                 {lefty ? (
                   <>
@@ -275,6 +292,15 @@ export default function App() {
       </div>
     </MotionConfig>
   )
+}
+
+// O cursor vai de 0 a 100 em escala logarítmica: o meio (50) dá ~32 ms,
+// a ponta rápida 10 ms e a ponta lenta 100 ms entre uma corda e a próxima.
+function sliderToStrum(v: number) {
+  return Math.round(STRUM_MIN_MS * Math.pow(STRUM_MAX_MS / STRUM_MIN_MS, v / 100))
+}
+function strumToSlider(ms: number) {
+  return Math.round((100 * Math.log(ms / STRUM_MIN_MS)) / Math.log(STRUM_MAX_MS / STRUM_MIN_MS))
 }
 
 function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
