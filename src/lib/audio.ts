@@ -1,37 +1,73 @@
 import { Note } from 'tonal'
 import * as Tone from 'tone'
 import type { Shape } from './chords'
+import { synthPluck } from './ks'
 import { noteAt } from './theory'
 
 // ---------------------------------------------------------------------------
-// Som do acorde, sintetizado na hora com o tone.js (nada é baixado, então
-// funciona offline). Usamos o PluckSynth, que simula uma corda dedilhada
-// (algoritmo Karplus-Strong). Cada corda do violão tem o seu próprio
-// sintetizador, como no instrumento de verdade: as notas continuam soando
-// juntas depois de atacadas.
+// Som do acorde. Cada nota é sintetizada na hora por um modelo de corda
+// (ver ks.ts) e depois passa por filtros que imitam o corpo de madeira do
+// violão. Nada é baixado, então funciona offline.
+//
+// Afinação: A4 = 440 Hz, e cada casa sobe 1 semitom. As cordas soltas são
+// E2 (82,41 Hz), A2 (110 Hz), D3 (146,83 Hz), G3 (196 Hz), B3 (246,94 Hz)
+// e E4 (329,63 Hz). A nota de cada corda vem do tonal (corda solta + casa).
 // ---------------------------------------------------------------------------
 
-/** Atraso entre uma corda e a próxima no ataque, em milissegundos. Ajuste à vontade (25 a 40 soa natural). */
+/** Atraso padrão entre uma corda e a próxima no ataque, em ms (valor do meio do cursor). */
 export const STRUM_DELAY_MS = 32
+/** Limites do cursor de velocidade: mais rápido e mais lento, em ms. */
+export const STRUM_MIN_MS = 10
+export const STRUM_MAX_MS = 100
 /** Duração total do acorde, em segundos. */
 export const CHORD_DURATION_S = 2
 /** Duração do decaimento suave no final, em segundos. */
 export const FADE_OUT_S = 0.6
+/** Referência de afinação. */
+export const A4_HZ = 440
+
+export const hzOf = (note: string) => A4_HZ * Math.pow(2, ((Note.midi(note) ?? 69) - 69) / 12)
 
 let volume: Tone.Volume | null = null
 let bus: Tone.Gain | null = null
-let strings: Tone.PluckSynth[] = []
+let body: Tone.Gain | null = null
+let voices: (Tone.ToneBufferSource | null)[] = [null, null, null, null, null, null]
 let timers: number[] = []
+const cache = new Map<string, Tone.ToneAudioBuffer>()
 
 function setup() {
   if (volume) return
   volume = new Tone.Volume(0).toDestination()
   bus = new Tone.Gain(0).connect(volume)
-  // Um leve reverb de sala deixa o som menos "seco".
-  const room = new Tone.Freeverb({ roomSize: 0.55, dampening: 3200, wet: 0.18 }).connect(bus)
-  strings = Array.from({ length: 6 }, () =>
-    new Tone.PluckSynth({ attackNoise: 1.2, dampening: 3600, resonance: 0.985, release: 0.05 }).connect(room),
-  )
+  // Corpo do violão: ressonância grave da caixa (~100 Hz), "calor" (~220 Hz),
+  // presença (~3 kHz) e corte dos agudos ásperos. Um reverb curto de sala.
+  const room = new Tone.Freeverb({ roomSize: 0.5, dampening: 3000, wet: 0.14 }).connect(bus)
+  const air = new Tone.Filter({ type: 'lowpass', frequency: 7000, Q: 0.5 }).connect(room)
+  const presence = new Tone.Filter({ type: 'peaking', frequency: 3000, Q: 0.9, gain: 2 }).connect(air)
+  const warmth = new Tone.Filter({ type: 'peaking', frequency: 220, Q: 1.4, gain: 2.5 }).connect(presence)
+  const box = new Tone.Filter({ type: 'peaking', frequency: 105, Q: 1.8, gain: 4 }).connect(warmth)
+  const rumble = new Tone.Filter({ type: 'highpass', frequency: 70, Q: 0.7 }).connect(box)
+  body = new Tone.Gain(0.32).connect(rumble)
+}
+
+// Gera (uma vez) e guarda o som de cada nota em cada corda.
+function bufferFor(stringIndex: number, note: string, fret: number) {
+  const key = `${stringIndex}-${note}`
+  let buf = cache.get(key)
+  if (!buf) {
+    const data = synthPluck({
+      freq: hzOf(note),
+      sampleRate: Tone.getContext().sampleRate,
+      duration: CHORD_DURATION_S + 0.3,
+      // Cordas graves soam mais tempo; casas altas abafam um pouco.
+      t60: 4.2 - stringIndex * 0.35 - fret * 0.04,
+      brightness: 0.4 + stringIndex * 0.03,
+      seed: stringIndex * 31 + fret + 7,
+    })
+    buf = Tone.ToneAudioBuffer.fromArray(data)
+    cache.set(key, buf)
+  }
+  return buf
 }
 
 export function setVolume(level: number, muted: boolean) {
@@ -42,10 +78,17 @@ export function setVolume(level: number, muted: boolean) {
 
 /**
  * Toca o acorde da 6ª corda para a 1ª, pulando as cordas com X.
+ * `strumMs` é o atraso entre uma corda e a próxima (velocidade do ataque).
  * `onPluck` é chamado no instante em que cada corda é atacada (para o brilho no diagrama).
  * Deve ser chamado dentro do clique: o navegador só libera o áudio após interação.
  */
-export function playShape(shape: Shape, level: number, muted: boolean, onPluck: (stringIndex: number) => void) {
+export function playShape(
+  shape: Shape,
+  level: number,
+  muted: boolean,
+  strumMs: number,
+  onPluck: (stringIndex: number) => void,
+) {
   void Tone.start() // libera o áudio (precisa estar dentro do clique)
   setup()
   setVolume(level, muted)
@@ -58,20 +101,23 @@ export function playShape(shape: Shape, level: number, muted: boolean, onPluck: 
   gain.cancelScheduledValues(now)
   gain.setValueAtTime(gain.value, now)
   gain.linearRampToValueAtTime(0, now + 0.03)
-  strings.forEach((str) => str.triggerRelease(now + 0.03)) // abafa todas as cordas
+  voices.forEach((v) => v?.stop(now + 0.04))
+  voices = [null, null, null, null, null, null]
 
-  const start = now + 0.05
+  const start = now + 0.06
   gain.setValueAtTime(1, start)
 
   let k = 0
   shape.frets.forEach((fret, s) => {
     if (fret < 0) return // corda com X: não toca
     // Altura REAL da corda: afinação da corda solta + casa (via tonal).
-    const midi = Note.midi(noteAt(s, fret))
-    if (midi === null) return
-    const when = start + (k++ * STRUM_DELAY_MS) / 1000
-    strings[s].triggerAttack(Tone.Frequency(midi, 'midi').toFrequency(), when)
-    timers.push(window.setTimeout(() => onPluck(s), (when - Tone.now()) * 1000))
+    const note = noteAt(s, fret)
+    const when = start + (k++ * strumMs) / 1000
+    const src = new Tone.ToneBufferSource(bufferFor(s, note, fret)).connect(body!)
+    // Pequena variação de força entre as cordas, como na mão de verdade.
+    src.start(when, 0, undefined, 0.85 + Math.random() * 0.15)
+    voices[s] = src
+    timers.push(window.setTimeout(() => onPluck(s), Math.max(0, (when - Tone.now()) * 1000)))
   })
 
   // Decaimento suave até o fim dos 2 segundos, sem corte seco.
@@ -79,5 +125,5 @@ export function playShape(shape: Shape, level: number, muted: boolean, onPluck: 
   gain.setValueAtTime(1, end - FADE_OUT_S)
   gain.exponentialRampToValueAtTime(0.0001, end)
   gain.setValueAtTime(0, end + 0.01)
-  strings.forEach((str) => str.triggerRelease(end))
+  voices.forEach((v) => v?.stop(end + 0.05))
 }

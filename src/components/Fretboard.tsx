@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { STRING_NAMES, STRING_NOTES, windowSize, type Shape } from '../lib/chords'
-import { DEGREES, chromaAt, type Analysis } from '../lib/theory'
+import { hzOf } from '../lib/audio'
+import { OPEN_STRINGS, STRING_NAMES, windowSize, type Shape } from '../lib/chords'
+import { DEGREES, chromaAt, noteAt, type Analysis } from '../lib/theory'
 
 // ---------------------------------------------------------------------------
 // Braço do violão em SVG 2D, na vertical (como nas revistas de cifra):
@@ -42,7 +43,7 @@ export function Fretboard({
   const base = shape?.baseFret ?? 1
   const frets = windowSize(shape)
   const top = mini ? 34 : 70
-  const bottom = mini ? 10 : 62
+  const bottom = mini ? 10 : 84
   const width = LEFT + 5 * SG + RIGHT
   const height = top + frets * FG + bottom
 
@@ -215,7 +216,7 @@ export function Fretboard({
           return (
             <motion.rect
               key={`b${b.fret}-${b.finger}`}
-              initial={{ opacity: 0 }}
+              initial={{ opacity: 0, x: x1, y: y(b.fret) - r, width: x2 - x1 }}
               animate={{ opacity: 1, x: x1, y: y(b.fret) - r, width: x2 - x1 }}
               exit={{ opacity: 0 }}
               height={r * 2}
@@ -265,18 +266,29 @@ export function Fretboard({
         })}
       </AnimatePresence>
 
-      {/* Nome das cordas embaixo: número e nota */}
+      {/* Embaixo de cada corda: número, nota que soa (com a oitava) e frequência.
+          Corda com X mostra a afinação da corda solta, apagada. */}
       {!mini &&
-        STRING_NAMES.map((name, s) => (
-          <g key={`n${s}`} textAnchor="middle">
-            <text x={x(s)} y={top + frets * FG + 26} fontSize={15} fontWeight={700} fill="#e2e8f0">
-              {name}
-            </text>
-            <text x={x(s)} y={top + frets * FG + 47} fontSize={14} fill="#94a3b8">
-              {STRING_NOTES[s]}
-            </text>
-          </g>
-        ))}
+        STRING_NAMES.map((name, s) => {
+          const fret = shape?.frets[s] ?? 0
+          const muted = fret < 0
+          const note = muted ? OPEN_STRINGS[s] : noteAt(s, fret)
+          const hz = hzOf(note)
+          return (
+            <g key={`n${s}`} textAnchor="middle" opacity={muted ? 0.35 : 1}>
+              <title>{`${name} corda: ${note} (${hz.toFixed(2)} Hz)`}</title>
+              <text x={x(s)} y={top + frets * FG + 24} fontSize={15} fontWeight={700} fill="#e2e8f0">
+                {name}
+              </text>
+              <text x={x(s)} y={top + frets * FG + 45} fontSize={14} fontWeight={600} fill={muted ? '#94a3b8' : colorAt(s, fret).color}>
+                {note}
+              </text>
+              <text x={x(s)} y={top + frets * FG + 64} fontSize={11} fill="#94a3b8">
+                {Math.round(hz)} Hz
+              </text>
+            </g>
+          )
+        })}
     </svg>
   )
 }
