@@ -1,0 +1,187 @@
+import { motion } from 'framer-motion'
+import { useEffect, useRef, useState } from 'react'
+import { BPM_DEFAULT, BPM_MAX, BPM_MIN, Metronome, tempoName } from '../lib/metronome'
+import { useStoredState } from '../lib/storage'
+
+interface Props {
+  /** Avisado a cada batida (para marcar no gráfico de amplitude). */
+  onBeat: (beat: number, at: number) => void
+  /** Se a aba Aprendizado está aberta (a barra de espaço só funciona nela). */
+  active: boolean
+}
+
+const clampBpm = (v: number) => Math.min(BPM_MAX, Math.max(BPM_MIN, Math.round(v)))
+
+export function MetronomePanel({ onBeat, active }: Props) {
+  const [bpm, setBpm] = useStoredState('metronomo-bpm', BPM_DEFAULT)
+  const [beats, setBeats] = useStoredState('metronomo-compasso', 4)
+  const [volume, setVolume] = useStoredState('metronomo-volume', 0.8)
+  const [running, setRunning] = useState(false)
+  const [current, setCurrent] = useState(-1)
+  const metro = useRef<Metronome | null>(null)
+  const taps = useRef<number[]>([])
+  const onBeatRef = useRef(onBeat)
+  useEffect(() => {
+    onBeatRef.current = onBeat
+  }, [onBeat])
+
+  // Cria o metrônomo uma vez; desliga ao sair da página.
+  useEffect(() => {
+    const m = new Metronome()
+    m.onBeat = (beat, at) => {
+      setCurrent(beat)
+      onBeatRef.current(beat, at)
+    }
+    metro.current = m
+    return () => m.stop()
+  }, [])
+
+  // Mudanças de andamento, compasso e volume valem na hora, mesmo tocando.
+  useEffect(() => {
+    if (!metro.current) return
+    metro.current.bpm = bpm
+    metro.current.beatsPerBar = beats
+    metro.current.setVolume(volume)
+  }, [bpm, beats, volume])
+
+  const toggle = () => {
+    const m = metro.current!
+    if (m.running) {
+      m.stop()
+      setRunning(false)
+      setCurrent(-1)
+    } else {
+      m.bpm = bpm
+      m.beatsPerBar = beats
+      m.setVolume(volume)
+      m.start()
+      setRunning(true)
+    }
+  }
+
+  // "Bater o tempo": a média dos intervalos entre os toques vira o BPM.
+  const tap = () => {
+    const now = performance.now()
+    taps.current = [...taps.current.filter((t) => now - t < 3000), now].slice(-6)
+    const t = taps.current
+    if (t.length < 2) return
+    const avg = (t[t.length - 1] - t[0]) / (t.length - 1)
+    setBpm(clampBpm(60000 / avg))
+  }
+
+  // Barra de espaço liga/desliga, só com esta aba aberta e fora de campos e botões.
+  useEffect(() => {
+    if (!active) return
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (e.code !== 'Space' || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(tag)) return
+      e.preventDefault()
+      toggle()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  return (
+    <section className="rounded-2xl border border-line bg-panel/80 p-4 backdrop-blur sm:p-6">
+      <div className="mb-4 flex items-baseline justify-between">
+        <h2 className="font-display text-xl font-bold">Metrônomo</h2>
+        <span className="text-sm text-slate-400">{tempoName(bpm)}</span>
+      </div>
+
+      {/* Batidas do compasso: a atual acende */}
+      <div className="mb-5 flex justify-center gap-3" aria-hidden>
+        {Array.from({ length: beats }, (_, i) => (
+          <motion.span
+            key={i}
+            className={`h-5 w-5 rounded-full ${i === 0 ? 'bg-accent' : 'bg-accent-2'}`}
+            animate={{ opacity: current === i ? 1 : 0.18, scale: current === i ? 1.35 : 1 }}
+            transition={{ duration: 0.06 }}
+          />
+        ))}
+      </div>
+
+      <div className="flex items-center justify-center gap-4">
+        <button
+          onClick={() => setBpm(clampBpm(bpm - 1))}
+          aria-label="Diminuir 1 BPM"
+          className="grid h-12 w-12 place-items-center rounded-full bg-white/5 text-2xl hover:bg-white/10"
+        >
+          −
+        </button>
+        <div className="w-32 text-center">
+          <div className="font-display text-6xl font-bold tabular-nums">{bpm}</div>
+          <div className="text-xs tracking-widest text-slate-400">BPM</div>
+        </div>
+        <button
+          onClick={() => setBpm(clampBpm(bpm + 1))}
+          aria-label="Aumentar 1 BPM"
+          className="grid h-12 w-12 place-items-center rounded-full bg-white/5 text-2xl hover:bg-white/10"
+        >
+          +
+        </button>
+      </div>
+
+      <input
+        type="range"
+        min={BPM_MIN}
+        max={BPM_MAX}
+        value={bpm}
+        onChange={(e) => setBpm(clampBpm(Number(e.target.value)))}
+        aria-label="Andamento em batidas por minuto"
+        className="mt-4 w-full accent-[#7c5cff]"
+      />
+      <div className="flex justify-between text-xs text-slate-500">
+        <span>{BPM_MIN}</span>
+        <span>{BPM_MAX}</span>
+      </div>
+
+      <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+        <button
+          onClick={toggle}
+          className={`min-w-36 rounded-full px-6 py-3 font-semibold text-white shadow-lg transition active:scale-95 ${
+            running ? 'bg-rose-500/90 shadow-rose-500/30' : 'bg-gradient-to-r from-accent to-accent-2 shadow-accent/30'
+          }`}
+        >
+          {running ? '■ Parar' : '▶ Iniciar'}
+        </button>
+        <button onClick={tap} className="rounded-full border border-line px-5 py-3 text-sm text-slate-200 hover:border-slate-500">
+          Bater o tempo
+        </button>
+      </div>
+
+      <div className="mt-5 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-sm">
+        <label className="flex items-center gap-2 text-slate-300">
+          Compasso
+          <select
+            value={beats}
+            onChange={(e) => setBeats(Number(e.target.value))}
+            className="rounded-lg border border-line bg-panel px-2 py-1 text-white"
+          >
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+              <option key={n} value={n}>
+                {n === 1 ? 'sem acento' : `${n} tempos`}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-2 text-slate-300">
+          Volume
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={volume}
+            onChange={(e) => setVolume(Number(e.target.value))}
+            aria-label="Volume do metrônomo"
+            className="w-24 accent-[#22d3ee]"
+          />
+        </label>
+      </div>
+      <p className="mt-4 text-center text-xs text-slate-500">
+        O 1º tempo de cada compasso soa mais agudo. Toque "Bater o tempo" no ritmo da música para achar o BPM.
+      </p>
+    </section>
+  )
+}
