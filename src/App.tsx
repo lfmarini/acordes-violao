@@ -5,6 +5,7 @@ import { ChordPicker } from './components/ChordPicker'
 import { Fretboard } from './components/Fretboard'
 import { CircleOfFifths } from './components/CircleOfFifths'
 import { HarmonicField } from './components/HarmonicField'
+import { Learning } from './components/Learning'
 import { TheoryPanel } from './components/TheoryPanel'
 import { defaultMode, type Mode } from './lib/harmony'
 import { VariationsBar } from './components/VariationsBar'
@@ -15,6 +16,12 @@ import { DEGREES, analyze } from './lib/theory'
 
 // O fundo 3D fica fora do pacote inicial: só é baixado depois que a tela aparece.
 const Background3D = lazy(() => import('./three/Background3D'))
+
+const TABS = [
+  { id: 'acordes', label: 'Acordes' },
+  { id: 'aprendizado', label: 'Aprendizado' },
+] as const
+type TabId = (typeof TABS)[number]['id']
 
 type StoredChord = { root: string; q: string }
 const toRef = (c: StoredChord): ChordRef => ({
@@ -35,6 +42,7 @@ export default function App() {
   const [openStats, setOpenStats] = useStoredState('preferencia-aberta', { open: 1, other: 0 })
   const [highlight, setHighlight] = useState<number | null>(null)
   const [captureOpen, setCaptureOpen] = useState(false)
+  const [tab, setTab] = useStoredState<TabId>('aba', 'acordes')
   // Tonalidade do campo harmônico: segue o acorde, mas pode ser trocada à mão.
   const [modeOverride, setModeOverride] = useState<Mode | null>(null)
   const [plucked, setPlucked] = useState<Record<number, number>>({})
@@ -82,13 +90,13 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      if (tab !== 'acordes' || tag === 'INPUT' || tag === 'TEXTAREA') return
       if (e.key === 'ArrowRight') selectVariation(index + 1)
       if (e.key === 'ArrowLeft') selectVariation(index - 1)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [index, selectVariation])
+  }, [index, selectVariation, tab])
 
   useEffect(() => setVolume(volume, muted), [volume, muted])
 
@@ -138,8 +146,34 @@ export default function App() {
             </span>
           </button>
         </header>
-        <ChordCapture open={captureOpen} onClose={() => setCaptureOpen(false)} onPick={changeChord} />
+        <ChordCapture
+          open={captureOpen}
+          onClose={() => setCaptureOpen(false)}
+          onPick={(c) => {
+            changeChord(c)
+            setTab('acordes')
+          }}
+        />
 
+        {/* Abas */}
+        <nav className="flex gap-1 rounded-full border border-line bg-panel/70 p-1 text-sm backdrop-blur sm:w-fit" role="tablist">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              role="tab"
+              aria-selected={tab === t.id}
+              onClick={() => setTab(t.id)}
+              className={`flex-1 rounded-full px-5 py-2 font-semibold transition sm:flex-none ${
+                tab === t.id ? 'bg-accent text-white shadow-lg shadow-accent/30' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
+
+        {/* A aba escondida continua montada: o metrônomo segue tocando enquanto você olha os acordes. */}
+        <div hidden={tab !== 'acordes'} className="flex flex-col gap-5">
         <ChordPicker chord={chord} onChange={changeChord} />
 
         {favorites.length > 0 && (
@@ -313,6 +347,11 @@ export default function App() {
             <HarmonicField chord={chord} mode={mode} onMode={setModeOverride} onPick={changeChord} />
             <CircleOfFifths chord={chord} mode={mode} onPick={changeChord} />
           </div>
+        </div>
+        </div>
+
+        <div hidden={tab !== 'aprendizado'}>
+          <Learning active={tab === 'aprendizado'} />
         </div>
       </div>
     </MotionConfig>

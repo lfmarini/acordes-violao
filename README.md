@@ -37,6 +37,10 @@ e no computador.
 - **Capturar acorde** (tipo Shazam): o app ouve o violão pelo microfone,
   descobre as notas que estão soando e mostra os acordes mais prováveis. O som
   é analisado só no navegador, nada é enviado para a internet.
+- **Aba Aprendizado**: metrônomo de 40 a 200 BPM (com acento no 1º tempo,
+  compasso de 1 a 8 tempos, "bater o tempo" e volume) e gráfico da amplitude
+  sonora captada pelo microfone nos últimos 8 segundos, com as batidas do
+  metrônomo marcadas para conferir se você está no tempo.
 - **Favoritos** com estrela e lembrança do último acorde, tudo salvo no navegador.
 
 ## Tecnologias
@@ -58,6 +62,8 @@ vite-plugin-pwa (modo offline).
 | Qualidades de acorde da lista | `src/lib/chords.ts` |
 | Campo harmônico | `src/lib/harmony.ts` |
 | Reconhecimento de acordes pelo som | `src/lib/recognize.ts` |
+| Metrônomo (limites de BPM, som do clique) | `src/lib/metronome.ts` |
+| Gráfico de amplitude | `src/components/AmplitudeChart.tsx` |
 | Desenho do braço | `src/components/Fretboard.tsx` |
 
 ## Rodando no computador
