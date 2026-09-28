@@ -46,7 +46,9 @@ e no computador.
   10 s, 30 s, 1 min ou a gravação inteira. Uma trilha pequena abaixo do gráfico
   mostra o último minuto. Com o microfone ligado, o quadro "Tocando agora"
   identifica a nota (com a afinação em cents) ou o acorde que está soando e
-  marca cada troca no gráfico.
+  marca cada troca no gráfico. Dá para ouvir a última gravação no próprio app,
+  escolher se o som do metrônomo entra no arquivo e ligar a redução de ruído
+  (fraca, média ou forte), que tira chiado e barulho constante do ambiente.
 - **Favoritos** com estrela e lembrança do último acorde, tudo salvo no navegador.
 
 ## Tecnologias
@@ -73,6 +75,7 @@ vite-plugin-pwa (modo offline) e [lamejs](https://github.com/breezystack/lamejs)
 | Gravação, MP3/WAV e qualidade do MP3 (`MP3_KBPS`) | `src/lib/recorder.ts` |
 | Identificação ao vivo de nota/acorde | `src/lib/liveDetect.ts` |
 | Estilo dos botões (`.btn`) | `src/index.css` |
+| Redução de ruído (níveis fraca/média/forte) | `src/lib/denoise.ts` |
 | Gráfico de amplitude | `src/components/AmplitudeChart.tsx` |
 | Desenho do braço | `src/components/Fretboard.tsx` |
 
@@ -88,7 +91,8 @@ npm run dev
 Outros comandos: `npm run build` (gera a versão final), `npm run testar`
 (confere o tradutor de cifras com uma lista de acordes), `npm run afinacao`
 (mede a frequência do som gerado em cada corda) e `npm run reconhecimento`
-(testa o reconhecedor com acordes sintetizados) e `npm run icones`
+(testa o reconhecedor com acordes sintetizados) e `npm run ruido` (mede
+quanto a redução de ruído tira do chiado e quanto preserva da nota) e `npm run icones`
 (gera os ícones do app).
 
 ## Publicação

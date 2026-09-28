@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { chordDisplayName, type ChordRef } from '../lib/chords'
 import { LiveDetector, liveLabel, type LiveResult } from '../lib/liveDetect'
 import { analyzeSpectrum } from '../lib/recognize'
+import { NOISE_LEVELS, createDenoiser, setNoiseLevel, type NoiseLevel } from '../lib/denoise'
 import { MAX_RECORD_MIN, MP3_KBPS, Recorder, downloadBlob } from '../lib/recorder'
 import { useStoredState } from '../lib/storage'
 
@@ -99,18 +100,38 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
   const [history, setHistory] = useState<string[]>([])
   const [format, setFormat] = useStoredState<Format>('formato-gravacao', 'mp3')
   const [saving, setSaving] = useState<{ label: string; progress: number } | null>(null)
+  const [noise, setNoise] = useStoredState<NoiseLevel>('reducao-ruido', 'off')
+  const [withClicks, setWithClicks] = useStoredState('gravar-metronomo', true)
+  const [replayUrl, setReplayUrl] = useState<string | null>(null)
+  const denoiser = useRef<AudioWorkletNode | null>(null)
+  const clicks = () => (withClicks ? beats.current ?? [] : undefined)
+
+  // Troca o nível de redução de ruído na hora, mesmo com o microfone ligado.
+  useEffect(() => {
+    if (denoiser.current) setNoiseLevel(denoiser.current, noise)
+  }, [noise])
+
+  // Ouvir a última gravação: para o microfone (para não gravar a própria
+  // reprodução) e toca a gravação inteira num player com barra de tempo.
+  const replay = () => {
+    const rec = recorder.current
+    if (!rec || rec.seconds === 0) return
+    stopRef.current()
+    if (replayUrl) URL.revokeObjectURL(replayUrl)
+    setReplayUrl(URL.createObjectURL(rec.toWav(undefined, clicks())))
+  }
 
   const save = async (o: (typeof SAVE_OPTIONS)[number]) => {
     const rec = recorder.current
     if (!rec) return
     const seconds = o.seconds ?? undefined
     if (format === 'wav') {
-      downloadBlob(rec.toWav(seconds), fileName(o.seconds, 'wav'))
+      downloadBlob(rec.toWav(seconds, clicks()), fileName(o.seconds, 'wav'))
       return
     }
     setSaving({ label: o.label, progress: 0 })
     try {
-      const blob = await rec.toMp3(seconds, (progress) => setSaving({ label: o.label, progress }))
+      const blob = await rec.toMp3(seconds, clicks(), (progress) => setSaving({ label: o.label, progress }))
       downloadBlob(blob, fileName(o.seconds, 'mp3'))
     } catch {
       setError('Não consegui converter para MP3. Tente salvar em WAV.')
@@ -218,6 +239,10 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
 
   const start = async () => {
     setError('')
+    if (replayUrl) {
+      URL.revokeObjectURL(replayUrl)
+      setReplayUrl(null)
+    }
     let stream: MediaStream
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -236,16 +261,27 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
     const source = ctx.createMediaStreamSource(stream)
     const analyser = ctx.createAnalyser() // volume
     analyser.fftSize = 2048
-    source.connect(analyser)
+    // Redução de ruído (se o navegador não suportar, segue sem ela).
+    let input: AudioNode = source
+    try {
+      const den = await createDenoiser(ctx)
+      setNoiseLevel(den, noise)
+      source.connect(den)
+      denoiser.current = den
+      input = den
+    } catch {
+      denoiser.current = null
+    }
+    input.connect(analyser)
     const spectrum = ctx.createAnalyser() // notas (precisa de mais resolução)
     spectrum.fftSize = DETECT_FFT
     spectrum.smoothingTimeConstant = 0
-    source.connect(spectrum)
+    input.connect(spectrum)
 
     // Grava tudo enquanto o microfone está ligado (uma nova gravação apaga a anterior).
     const rec = new Recorder()
     try {
-      await rec.attach(ctx, source)
+      await rec.attach(ctx, input)
       recorder.current = rec
     } catch {
       recorder.current = null // sem gravação neste navegador; o gráfico segue funcionando
@@ -309,6 +345,7 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
       recorder.current?.detach()
       setRecorded(recorder.current?.seconds ?? 0)
       setLive({ kind: 'silence' })
+      denoiser.current = null
       stream.getTracks().forEach((tr) => tr.stop())
       void ctx.close()
       setOn(false)
@@ -384,6 +421,35 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
             {recorded > 0 ? `${fmtTime(recorded)} gravados` : 'nada gravado ainda'}
           </span>
         </div>
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-400" role="group" aria-label="Redução de ruído">
+          <span className="w-full sm:w-auto">Redução de ruído:</span>
+          {NOISE_LEVELS.map((n) => (
+            <button
+              key={n.id}
+              onClick={() => setNoise(n.id)}
+              aria-pressed={noise === n.id}
+              className={`btn btn-round px-3 py-1 text-xs ${noise === n.id ? 'btn-primary' : ''}`}
+            >
+              {n.label}
+            </button>
+          ))}
+        </div>
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-400" role="group" aria-label="Metrônomo na gravação">
+          <span className="w-full sm:w-auto">Som do metrônomo na gravação:</span>
+          {[
+            { v: true, label: 'Gravar' },
+            { v: false, label: 'Não gravar' },
+          ].map((o) => (
+            <button
+              key={o.label}
+              onClick={() => setWithClicks(o.v)}
+              aria-pressed={withClicks === o.v}
+              className={`btn btn-round px-3 py-1 text-xs ${withClicks === o.v ? 'btn-primary' : ''}`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
         <div className="mb-2 flex items-center gap-2 text-xs text-slate-400" role="group" aria-label="Formato do arquivo">
           Formato:
           {FORMATS.map((f) => (
@@ -411,9 +477,25 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
             )
           })}
         </div>
+
+        {/* Ouvir a última gravação */}
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button onClick={replay} disabled={recorded === 0} className="btn btn-round btn-primary px-4">
+            ▶ {on ? 'Parar e ouvir a gravação' : 'Ouvir a última gravação'}
+          </button>
+          {replayUrl && (
+            <audio key={replayUrl} src={replayUrl} controls autoPlay className="h-10 min-w-0 flex-1" />
+          )}
+        </div>
+
         <p className="mt-2 text-xs text-slate-500">
           O arquivo vai para a pasta de downloads. Dá para salvar com o microfone ligado ou depois de parar. A gravação fica só na
           memória desta página (até {MAX_RECORD_MIN} min) e some ao ligar o microfone de novo ou fechar o app.
+        </p>
+        <p className="mt-1 text-xs text-slate-500">
+          "Gravar" o metrônomo mistura o tic direto no arquivo, no tempo certo. Se o metrônomo sai pelo alto-falante, o microfone também
+          pode captá-lo; com fones de ouvido, só entra no arquivo o que você escolher aqui. A redução de ruído tira chiado e barulho
+          constante (ventilador, geladeira); a forte limpa mais, mas pode abafar um pouco as notas fracas.
         </p>
       </div>
       <p className="mt-2 text-xs text-slate-500">
