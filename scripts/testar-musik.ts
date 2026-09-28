@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { readChordMidi } from '../src/lib/chordMidi'
 import { parseLrc } from '../src/lib/lrclib'
-import { assemble, chordAt, chordChanges, newSong, nextChord, prevChord, trackFromTaps, type Song } from '../src/lib/song'
+import { assemble, chordAt, chordChanges, fitLyricSync, lyricTime, newSong, nextChord, prevChord, trackFromTaps, type Song } from '../src/lib/song'
 import { posAtTime } from '../src/lib/songPlayer'
 import { parsePastedChords, trackFromPaste } from '../src/lib/pasteChords'
 import { trackFromAnalysis, trimLeadingSilence } from '../src/lib/audioAnalysis'
@@ -158,6 +158,35 @@ const sil = new Float32Array(44100 * 2)
 sil.fill(0.3, 44100)
 const trimmed = trimLeadingSilence(sil)
 check(Math.abs(trimmed.trimmed - 0.95) < 0.06, `tira o silêncio do começo da gravação (${trimmed.trimmed.toFixed(2)} s)`)
+
+// --- Sincronia da letra: versões diferentes (vídeo com introdução mais longa) ---
+console.log('\n— acertar a letra pela voz —')
+{
+  // Um toque: a voz da linha de 30 s foi ouvida aos 52,4 s -> desloca 22,4 s.
+  const one = fitLyricSync([{ lrc: 30, heard: 52.4 }])
+  check(one.offset === 22.4 && one.scale === 1, `um toque só desloca a letra: ${one.offset} s`)
+  // Vários toques numa versão 2% mais lenta e com 20 s a mais de introdução.
+  const pairs = [30, 60, 95, 140, 200].map((t) => ({ lrc: t, heard: t * 1.02 + 20 + (t === 95 ? 0.15 : 0) }))
+  const fit = fitLyricSync(pairs)
+  check(Math.abs(fit.scale - 1.02) < 0.003 && Math.abs(fit.offset - 20) < 0.3, `vários toques corrigem também a velocidade: escala ${fit.scale}, desloca ${fit.offset} s`)
+  // Toque absurdo (escala fora de 0,9–1,1) volta para "só deslocar".
+  const wild = fitLyricSync([{ lrc: 10, heard: 15 }, { lrc: 100, heard: 150 }])
+  check(wild.scale === 1, 'toques desencontrados não mudam a velocidade')
+  // Aplicado na montagem: linha que era cantada 22,4 s depois passa a acender no compasso certo.
+  const late = { ...song, lyricOffset: one.offset }
+  const syncedFirst = assemble(late).sections.find((s) => s.lines.length)!.lines[0]
+  check(Math.abs(syncedFirst.start - (lines.find((l) => l.text)!.t! + 22.4)) < 1e-9, 'deslocamento vai para a folha')
+  check(lyricTime({ lyricOffset: 20, lyricScale: 1.02 }, 100) === 122, 'tempo da letra = tempo × escala + deslocamento')
+}
+
+// Voz que entra na 2ª metade do compasso começa no compasso seguinte.
+{
+  const bar = 60 / BPM * 4
+  const m5 = sheet.measures[5]
+  const pickup = assemble({ ...song, lyrics: [{ t: m5.start + bar * 0.6, text: 'linha que entra tarde' }] })
+  const pl = pickup.sections.find((s) => s.lines.length)!.lines[0]
+  check(pl.measures.find((m) => m.lyric)!.index === 6, `voz no tempo 3,4 do compasso 5: a linha acende no compasso 6 (${pl.measures.find((m) => m.lyric)!.index})`)
+}
 
 // --- Acorde repetido em cada tempo (MIDI que toca o acorde curtinho a cada batida) ---
 console.log('\n— acorde repetido no compasso —')

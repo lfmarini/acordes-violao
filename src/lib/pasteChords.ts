@@ -1,6 +1,6 @@
 import { Note } from 'tonal'
 import { findDownbeat, type ChordEvent, type ChordTrack } from './chordMidi'
-import { normalizeLine, type Song } from './song'
+import { lyricTime, normalizeLine, type Song } from './song'
 import { estimateKey, parseSongChord, type SongChord } from './songChords'
 
 // ---------------------------------------------------------------------------
@@ -97,7 +97,7 @@ const syllables = (s: string) => Math.max(1, (s.toLowerCase().match(/[aeiouyáé
 export function trackFromPaste(song: Song, pasted: PastedLine[], bpm: number, beatsPerBar: number): ChordTrack {
   const spb = 60 / bpm
   const bar = spb * beatsPerBar
-  const timed = song.synced ? song.lyrics.filter((l) => l.text && l.t !== null).map((l) => ({ t: l.t! + song.lyricOffset, text: l.text })) : []
+  const timed = song.synced ? song.lyrics.filter((l) => l.text && l.t !== null).map((l) => ({ t: lyricTime(song, l.t!), text: l.text })) : []
   const events: { t: number; chord: SongChord }[] = []
   let T = 0
   let j = 0

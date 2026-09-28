@@ -51,6 +51,7 @@ export interface Song {
   midiName?: string
   track?: ChordTrack
   lyricOffset: number // ajuste fino da letra (s): + atrasa, − adianta
+  lyricScale?: number // correção de velocidade da letra (versões com andamento diferente); 1 = igual
   downbeatShift: number // desloca o 1º tempo do compasso (em batidas)
   measureEdits: Record<number, MeasureChord[]> // correções feitas em "Editar compassos"
   bpmOverride?: number // BPM digitado/batido (senão, o do MIDI)
@@ -111,6 +112,8 @@ const EDGE_MIN = { measures: 2, seconds: 5 }
 const SOLO_MIN = { measures: 4, seconds: 8 }
 /** Diferença de duração entre letra e MIDI que gera o aviso (s). */
 const DURATION_WARN_S = 10
+/** Linha cuja voz entra depois desta fração do compasso começa no compasso seguinte. */
+const PICKUP_FRACTION = 0.5
 
 export function newSong(p: Pick<Song, 'id' | 'title' | 'artist' | 'album' | 'duration' | 'lyrics' | 'synced'> & { lrclibId?: number }): Song {
   const now = Date.now()
@@ -209,6 +212,37 @@ export const normalizeLine = (s: string) =>
     .replace(/\s+/g, ' ')
     .trim()
 
+/** Tempo de uma linha da letra (LRCLIB) já no relógio dos acordes: escala e ajuste fino. */
+export const lyricTime = (song: Pick<Song, 'lyricOffset' | 'lyricScale'>, t: number) => t * (song.lyricScale ?? 1) + song.lyricOffset
+
+/**
+ * "Acertar a letra pela voz": cada par é o tempo da linha na letra (LRC) e o
+ * instante (na gravação) em que você ouviu a voz começar essa linha.
+ * Com um par, só desloca a letra; com pares espalhados pela música (20 s ou
+ * mais entre eles), também corrige uma pequena diferença de velocidade.
+ */
+export function fitLyricSync(pairs: { lrc: number; heard: number }[]): { offset: number; scale: number } {
+  const round = (v: number, d: number) => Math.round(v * 10 ** d) / 10 ** d
+  if (!pairs.length) return { offset: 0, scale: 1 }
+  const lrcs = pairs.map((p) => p.lrc)
+  // Só deslocar: a mediana das diferenças (um toque errado não estraga).
+  const shiftOnly = () => {
+    const diffs = pairs.map((p) => p.heard - p.lrc).sort((a, b) => a - b)
+    return { offset: round(diffs[Math.floor(diffs.length / 2)], 2), scale: 1 }
+  }
+  if (pairs.length < 2 || Math.max(...lrcs) - Math.min(...lrcs) < 20) return shiftOnly()
+  // Reta que melhor passa pelos pontos (mínimos quadrados): ouvido = escala × lrc + deslocamento.
+  const n = pairs.length
+  const mx = lrcs.reduce((a, b) => a + b, 0) / n
+  const my = pairs.reduce((a, p) => a + p.heard, 0) / n
+  const sxy = pairs.reduce((a, p) => a + (p.lrc - mx) * (p.heard - my), 0)
+  const sxx = pairs.reduce((a, p) => a + (p.lrc - mx) ** 2, 0)
+  const scale = sxy / sxx
+  // Diferença de velocidade grande demais é engano de toque: fica só o deslocamento.
+  if (!(scale > 0.9 && scale < 1.1)) return shiftOnly()
+  return { offset: round(my - scale * mx, 2), scale: round(scale, 4) }
+}
+
 interface TimedLine {
   text: string
   t: number
@@ -225,7 +259,7 @@ function timeLines(song: Song, measures: Measure[]): TimedLine[] {
         pendingBreak = true
         continue
       }
-      out.push({ text: l.text, t: (l.t ?? 0) + song.lyricOffset, breakBefore: pendingBreak })
+      out.push({ text: l.text, t: lyricTime(song, l.t ?? 0), breakBefore: pendingBreak })
       pendingBreak = false
     }
     return out
@@ -263,8 +297,9 @@ export function assemble(song: Song): Sheet {
   lines.forEach((l, i) => {
     let first = measureAt(l.t)
     const m = measures[first]
-    // Linha que começa no fim do compasso (anacruse) fica no compasso seguinte.
-    if (m && l.t > m.start + (m.end - m.start) * 0.75 && first + 1 < measures.length) first++
+    // Voz que entra na 2ª metade do compasso (anacruse): a linha começa no
+    // compasso seguinte, para o bloco não acender muito antes de a voz entrar.
+    if (m && l.t > m.start + (m.end - m.start) * PICKUP_FRACTION && first + 1 < measures.length) first++
     const nextT = lines[i + 1]?.t ?? Infinity
     const words = l.text.split(/\s+/).filter(Boolean)
     const total = words.reduce((a, w) => a + syllables(w), 0)
@@ -412,7 +447,7 @@ export function assemble(song: Song): Sheet {
     const t = song.track
     if (t && song.duration && Math.abs(t.duration - song.duration) > DURATION_WARN_S) {
       warnings.push(
-        `A letra escolhida dura ${fmt(song.duration)} e os acordes ${fmt(t.duration)}. Provavelmente são versões diferentes da música (estúdio × ao vivo). Escolha outra letra ou use o "Ajuste fino da letra".`,
+        `A letra escolhida dura ${fmt(song.duration)} e os acordes ${fmt(t.duration)}: provavelmente são versões diferentes da música (ex.: o vídeo tem introdução mais longa), e a letra fica fora de tempo. Escolha uma letra com a duração dos acordes ou use "Acertar a letra pela voz" em Tempo e sincronia.`,
       )
     }
     return { sections, measures, chordsInOrder: [...seen.values()], beatsPerBar, bpm, key: t?.key ?? null, warnings }

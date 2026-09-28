@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import type { ChordTrack } from '../lib/chordMidi'
 import { tapTempo } from '../lib/metronome'
-import { BPM_RANGE, METERS, chordChanges, trackFromTaps, type Meter, type Sheet, type Song } from '../lib/song'
+import { BPM_RANGE, METERS, chordChanges, fitLyricSync, trackFromTaps, type Meter, type Sheet, type Song } from '../lib/song'
 import { songChordName } from '../lib/songChords'
 import type { SongPlayer } from '../lib/songPlayer'
 
@@ -25,7 +25,9 @@ const fmtOffset = (s: number) => `${s > 0 ? '+' : s < 0 ? '−' : ''}${Math.abs(
 export function TempoPanel({ song, sheet, player, hasVideo, onChange }: Props) {
   const taps = useRef<number[]>([])
   const offset = song.lyricOffset
-  const setOffset = (v: number) => onChange({ lyricOffset: Math.round(Math.max(-OFFSET_MAX, Math.min(OFFSET_MAX, v)) * 10) / 10 })
+  // O cursor vai até ±10 s; se "Acertar pela voz" deslocou mais que isso, ele cresce junto.
+  const range = Math.max(OFFSET_MAX, Math.ceil(Math.abs(offset)) + 1)
+  const setOffset = (v: number) => onChange({ lyricOffset: Math.round(Math.max(-range, Math.min(range, v)) * 10) / 10 })
   const bpm = Math.round(sheet.bpm * 10) / 10
   const meter: Meter = song.meter ?? (`${sheet.beatsPerBar}/${song.track?.beatUnit ?? 4}` as Meter)
 
@@ -102,8 +104,8 @@ export function TempoPanel({ song, sheet, player, hasVideo, onChange }: Props) {
             </button>
             <input
               type="range"
-              min={-OFFSET_MAX}
-              max={OFFSET_MAX}
+              min={-range}
+              max={range}
               step={0.1}
               value={offset}
               onChange={(e) => setOffset(Number(e.target.value))}
@@ -127,6 +129,7 @@ export function TempoPanel({ song, sheet, player, hasVideo, onChange }: Props) {
         </div>
       </div>
 
+      <VoiceSync song={song} player={player} hasVideo={hasVideo} onChange={onChange} />
       <TapChanges song={song} sheet={sheet} player={player} hasVideo={hasVideo} onApply={(track) => onChange(track)} />
     </section>
   )
@@ -141,6 +144,121 @@ function Choice<T extends string | number>({ label, options, value, onPick }: { 
           {o.label}
         </button>
       ))}
+    </div>
+  )
+}
+
+// --- "Acertar a letra pela voz" ------------------------------------------------------------
+// Com o vídeo tocando, você toca no botão quando a voz começa a linha mostrada.
+// Cada toque liga o tempo da linha na letra ao tempo real da gravação; a letra
+// inteira é deslocada (e, com toques espalhados, a velocidade é corrigida).
+
+interface VoiceProps {
+  song: Song
+  player: SongPlayer | null
+  hasVideo: boolean
+  onChange: (patch: Partial<Song>) => void
+}
+
+const MAX_HINT = 42
+
+function VoiceSync({ song, player, hasVideo, onChange }: VoiceProps) {
+  const lines = song.synced ? song.lyrics.filter((l) => l.text && l.t !== null) : []
+  const [target, setTarget] = useState<number | null>(null) // índice da linha esperada
+  const [pairs, setPairs] = useState<{ lrc: number; heard: number; i: number }[]>([])
+  const active = target !== null
+  const line = active ? lines[target] : null
+  const hint = line ? (line.text.length > MAX_HINT ? line.text.slice(0, MAX_HINT).replace(/\s+\S*$/, '') + '…' : line.text) : ''
+  const scale = song.lyricScale ?? 1
+
+  const apply = (next: typeof pairs) => {
+    setPairs(next)
+    const fit = fitLyricSync(next)
+    onChange({ lyricOffset: fit.offset, lyricScale: fit.scale === 1 ? undefined : fit.scale })
+  }
+  const start = () => {
+    setPairs([])
+    setTarget(0)
+    player?.stop()
+    void player?.play()
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-line bg-black/20 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <strong className="text-sm">Acertar a letra pela voz</strong>
+        {(song.lyricOffset !== 0 || scale !== 1) && !active && (
+          <button onClick={() => onChange({ lyricOffset: 0, lyricScale: undefined })} className="btn btn-round px-3 py-1 text-xs">
+            ↺ Voltar ao original
+          </button>
+        )}
+      </div>
+      <p className="mt-1 text-xs text-slate-400">
+        Para quando a letra está adiantada ou atrasada (versões diferentes da música). O vídeo começa do início; toque no botão no instante em que
+        o cantor começa a linha mostrada. Um toque já acerta; toques em linhas espalhadas pela música acertam também a velocidade.
+      </p>
+      {!active && (
+        <button onClick={start} disabled={!hasVideo || !lines.length} className="btn btn-round mt-2 px-4">
+          🎤 Começar a acertar
+        </button>
+      )}
+      {!hasVideo && <p className="mt-1 text-xs text-amber-200">Precisa do vídeo: salve o link do YouTube e escolha a fonte "Gravação (YouTube)".</p>}
+      {hasVideo && !lines.length && <p className="mt-1 text-xs text-amber-200">Esta letra não tem o tempo de cada linha.</p>}
+
+      {active && (
+        <div className="mt-3 flex flex-col items-center gap-3">
+          {line ? (
+            <button
+              onPointerDown={(e) => {
+                e.preventDefault()
+                if (!player || !line) return
+                apply([...pairs, { lrc: line.t!, heard: player.songTime(), i: target }])
+                setTarget(target + 1 < lines.length ? target + 1 : null)
+              }}
+              className="btn btn-primary flex min-h-28 w-full max-w-sm flex-col gap-1 px-4 py-3 text-center"
+            >
+              <span className="text-xs font-normal opacity-90">Toque quando ouvir o começo de:</span>
+              <span className="font-display text-lg leading-snug">“{hint}”</span>
+              <span className="text-[11px] font-normal opacity-80">
+                linha {target + 1} de {lines.length}
+              </span>
+            </button>
+          ) : (
+            <p className="text-sm text-emerald-300">Chegou ao fim da letra.</p>
+          )}
+          <div className="flex flex-wrap justify-center gap-2">
+            {line && (
+              <button onClick={() => setTarget(target + 1 < lines.length ? target + 1 : null)} className="btn btn-round px-3 py-1 text-xs">
+                Pular esta linha
+              </button>
+            )}
+            <button
+              onClick={() => {
+                const last = pairs[pairs.length - 1]
+                if (!last) return
+                apply(pairs.slice(0, -1))
+                setTarget(last.i)
+              }}
+              disabled={!pairs.length}
+              className="btn btn-round px-3 py-1 text-xs"
+            >
+              ↶ Desfazer toque
+            </button>
+            <button onClick={() => setTarget(null)} className="btn btn-round px-3 py-1 text-xs">
+              ✔ Concluir
+            </button>
+          </div>
+          {pairs.length > 0 && (
+            <p className="text-xs text-slate-300">
+              {pairs.length} toque{pairs.length > 1 ? 's' : ''}: letra {fmtOffset(song.lyricOffset)}
+              {scale !== 1 ? ` · velocidade ${(scale * 100).toFixed(1).replace('.', ',')}%` : ''}
+            </p>
+          )}
+        </div>
+      )}
+      {!active && scale !== 1 && (
+        <p className="mt-1 text-xs text-slate-400">Velocidade da letra corrigida para {(scale * 100).toFixed(1).replace('.', ',')}%.</p>
+      )}
     </div>
   )
 }
