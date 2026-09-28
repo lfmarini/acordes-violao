@@ -40,7 +40,9 @@ e no computador.
 - **Aba Aprendizado**: metrônomo de 40 a 200 BPM (com acento no 1º tempo,
   compasso de 1 a 8 tempos, "bater o tempo" e volume) e gráfico da amplitude
   sonora captada pelo microfone nos últimos 8 segundos, com as batidas do
-  metrônomo marcadas para conferir se você está no tempo.
+  metrônomo marcadas para conferir se você está no tempo. Enquanto o microfone
+  está ligado o som é gravado, e dá para salvar um arquivo .wav com os últimos
+  10 s, 30 s, 1 min ou a gravação inteira.
 - **Favoritos** com estrela e lembrança do último acorde, tudo salvo no navegador.
 
 ## Tecnologias
@@ -63,6 +65,7 @@ vite-plugin-pwa (modo offline).
 | Campo harmônico | `src/lib/harmony.ts` |
 | Reconhecimento de acordes pelo som | `src/lib/recognize.ts` |
 | Metrônomo (limites de BPM, som do clique) | `src/lib/metronome.ts` |
+| Gravação e arquivo .wav | `src/lib/recorder.ts` |
 | Gráfico de amplitude | `src/components/AmplitudeChart.tsx` |
 | Desenho do braço | `src/components/Fretboard.tsx` |
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { MAX_RECORD_MIN, Recorder, downloadBlob } from '../lib/recorder'
 
 // ---------------------------------------------------------------------------
 // Gráfico da amplitude sonora ao longo do tempo, captada pelo microfone.
@@ -23,6 +24,23 @@ interface Props {
   active: boolean
 }
 
+// Opções de salvar: segundos (null = a gravação inteira).
+const SAVE_OPTIONS = [
+  { label: 'Últimos 10 s', seconds: 10 },
+  { label: 'Últimos 30 s', seconds: 30 },
+  { label: 'Último 1 min', seconds: 60 },
+  { label: 'Gravação inteira', seconds: null },
+] as const
+
+const fmtTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+
+function fileName(seconds: number | null) {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}h${pad(d.getMinutes())}`
+  return `acordes-gravacao_${stamp}_${seconds ? `${seconds}s` : 'inteira'}.wav`
+}
+
 const toDb = (rms: number) => Math.max(DB_FLOOR, 20 * Math.log10(Math.max(rms, 1e-6)))
 
 export function AmplitudeChart({ beats, active }: Props) {
@@ -32,6 +50,8 @@ export function AmplitudeChart({ beats, active }: Props) {
   const [on, setOn] = useState(false)
   const [error, setError] = useState('')
   const [level, setLevel] = useState({ now: DB_FLOOR, peak: DB_FLOOR })
+  const recorder = useRef<Recorder | null>(null)
+  const [recorded, setRecorded] = useState(0) // segundos gravados
 
   const draw = useCallback(() => {
     const c = canvas.current
@@ -124,7 +144,17 @@ export function AmplitudeChart({ beats, active }: Props) {
     const ctx = new AudioContext()
     const analyser = ctx.createAnalyser()
     analyser.fftSize = 2048
-    ctx.createMediaStreamSource(stream).connect(analyser)
+    const source = ctx.createMediaStreamSource(stream)
+    source.connect(analyser)
+    // Grava tudo enquanto o microfone está ligado (uma nova gravação apaga a anterior).
+    const rec = new Recorder()
+    try {
+      await rec.attach(ctx, source)
+      recorder.current = rec
+    } catch {
+      recorder.current = null // sem gravação neste navegador; o gráfico segue funcionando
+    }
+    setRecorded(0)
     const wave = new Float32Array(analyser.fftSize)
     let peak = DB_FLOOR
     let raf = 0
@@ -140,6 +170,7 @@ export function AmplitudeChart({ beats, active }: Props) {
       peak = Math.max(peak - 0.05, db) // o pico desce devagar
       if (t - lastUi > 150) {
         setLevel({ now: db, peak })
+        setRecorded(recorder.current?.seconds ?? 0)
         lastUi = t
       }
       draw()
@@ -150,6 +181,8 @@ export function AmplitudeChart({ beats, active }: Props) {
 
     stopRef.current = () => {
       cancelAnimationFrame(raf)
+      recorder.current?.detach()
+      setRecorded(recorder.current?.seconds ?? 0)
       stream.getTracks().forEach((tr) => tr.stop())
       void ctx.close()
       setOn(false)
@@ -200,6 +233,36 @@ export function AmplitudeChart({ beats, active }: Props) {
         </span>
       </div>
       {error && <p className="mt-2 text-sm text-rose-300">{error}</p>}
+
+      {/* Salvar a gravação como arquivo .wav no aparelho */}
+      <div className="mt-4 rounded-xl border border-line bg-black/20 p-3">
+        <div className="mb-2 flex items-center justify-between text-sm">
+          <span className="font-semibold text-slate-200">Salvar gravação</span>
+          <span className="flex items-center gap-2 tabular-nums text-slate-400">
+            {on && <span className="h-2 w-2 animate-pulse rounded-full bg-rose-500" aria-hidden />}
+            {recorded > 0 ? `${fmtTime(recorded)} gravados` : 'nada gravado ainda'}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {SAVE_OPTIONS.map((o) => {
+            const enough = o.seconds === null ? recorded > 0 : recorded >= o.seconds
+            return (
+              <button
+                key={o.label}
+                disabled={!enough}
+                onClick={() => recorder.current && downloadBlob(recorder.current.toWav(o.seconds ?? undefined), fileName(o.seconds))}
+                className="rounded-lg bg-white/5 px-3 py-2 text-sm text-slate-100 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                {o.label}
+              </button>
+            )
+          })}
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          O arquivo .wav vai para a pasta de downloads. Dá para salvar com o microfone ligado ou depois de parar. A gravação fica só na
+          memória desta página (até {MAX_RECORD_MIN} min) e some ao ligar o microfone de novo ou fechar o app.
+        </p>
+      </div>
       <p className="mt-2 text-xs text-slate-500">
         0 dB é o máximo que o microfone capta; −60 dB é quase silêncio. Com o metrônomo ligado, veja se os picos das suas batidas caem
         nas linhas roxas.
