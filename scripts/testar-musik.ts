@@ -3,6 +3,7 @@ import { readChordMidi } from '../src/lib/chordMidi'
 import { parseLrc } from '../src/lib/lrclib'
 import { assemble, chordAt, chordChanges, fitLyricSync, lyricTime, newSong, nextChord, prevChord, trackFromTaps, type Song } from '../src/lib/song'
 import { posAtTime } from '../src/lib/songPlayer'
+import { chordifyHref, searchUrl } from '../src/lib/songLinks'
 import { parsePastedChords, trackFromPaste } from '../src/lib/pasteChords'
 import { trackFromAnalysis, trimLeadingSilence } from '../src/lib/audioAnalysis'
 import { parseSongChord, songChordName } from '../src/lib/songChords'
@@ -186,6 +187,19 @@ console.log('\n— acertar a letra pela voz —')
   const pickup = assemble({ ...song, lyrics: [{ t: m5.start + bar * 0.6, text: 'linha que entra tarde' }] })
   const pl = pickup.sections.find((s) => s.lines.length)!.lines[0]
   check(pl.measures.find((m) => m.lyric)!.index === 6, `voz no tempo 3,4 do compasso 5: a linha acende no compasso 6 (${pl.measures.find((m) => m.lyric)!.index})`)
+}
+
+// --- Link do Chordify no Android (o app do Chordify "sequestra" os links) ---
+console.log('\n— link do Chordify —')
+{
+  const android = 'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 Chrome/129.0 Mobile Safari/537.36'
+  const pc = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/129.0 Safari/537.36'
+  const iphone = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1'
+  const q = 'Exemplo Canção de Teste'
+  const a = chordifyHref(q, android)
+  check(a.startsWith('intent://chordify.net/search/') && a.includes(';scheme=https;package=com.android.chrome;'), 'Android: abre a busca pelo Chrome (passa por cima do app do Chordify)')
+  check(decodeURIComponent(a.match(/S\.browser_fallback_url=([^;]+)/)?.[1] ?? '') === searchUrl.chordify(q), 'Android: sem Chrome, cai no endereço normal da busca')
+  check(chordifyHref(q, pc) === searchUrl.chordify(q) && chordifyHref(q, iphone) === searchUrl.chordify(q), 'computador e iPhone: endereço normal, como antes')
 }
 
 // --- Acorde repetido em cada tempo (MIDI que toca o acorde curtinho a cada batida) ---

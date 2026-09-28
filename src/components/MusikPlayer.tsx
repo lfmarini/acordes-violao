@@ -9,7 +9,7 @@ import { useKaraokeRecording, type RecFormat } from '../lib/useKaraokeRecording'
 import { AlternativesPanel } from './AlternativesPanel'
 import { RecordButton, RecordingPanel } from './RecordingPanel'
 import { deleteSong, getSong, listSongs, putSong } from '../lib/songDb'
-import { searchUrl, youtubeId } from '../lib/songLinks'
+import { chordifyHref, searchUrl, youtubeId } from '../lib/songLinks'
 import { SongPlayer, type PatternId, type PlayPos, type PlayState, type SoundSource } from '../lib/songPlayer'
 import { useStoredState } from '../lib/storage'
 import { KaraokeBar } from './KaraokeBar'
@@ -387,7 +387,7 @@ export function MusikPlayer({ active }: { active: boolean }) {
               <Info label="Duração" value={fmtDuration(song.duration)} />
             </dl>
             <div className="mt-3 flex flex-wrap gap-2 text-sm">
-              <ExtLink href={searchUrl.chordify(q)}>Abrir no Chordify</ExtLink>
+              <ChordifyLink q={q} className="btn btn-round px-3 py-1.5 text-xs" onCopied={() => setMessage({ kind: 'ok', text: 'Link da busca no Chordify copiado.' })} />
               <ExtLink href={searchUrl.songsterr(q)}>Abrir no Songsterr</ExtLink>
               <ExtLink href={searchUrl.cifraclub(q)}>Abrir no Cifra Club</ExtLink>
               <ExtLink href={song.youtube ? `https://www.youtube.com/watch?v=${song.youtube}` : searchUrl.youtube(q)}>Ver no YouTube</ExtLink>
@@ -423,9 +423,7 @@ export function MusikPlayer({ active }: { active: boolean }) {
               </li>
             </ol>
             <div className="flex flex-wrap gap-2">
-              <a href={searchUrl.chordify(q)} target="_blank" rel="noopener noreferrer" className="btn btn-primary btn-round px-4">
-                Abrir no Chordify ↗
-              </a>
+              <ChordifyLink q={q} className="btn btn-primary btn-round px-4" onCopied={() => setMessage({ kind: 'ok', text: 'Link da busca no Chordify copiado.' })} />
               {canPickFolder() && (
                 <button onClick={() => void fromDownloads()} className="btn btn-round px-4">
                   ⬇ Pegar último arquivo da pasta Downloads
@@ -583,6 +581,28 @@ function Info({ label, value }: { label: string; value: string }) {
       <dt className="text-slate-400">{label}</dt>
       <dd className="font-display font-bold">{value}</dd>
     </div>
+  )
+}
+
+// "Abrir no Chordify": no Android abre pelo Chrome (o app do Chordify, se
+// instalado, pega os links chordify.net e não abre a busca). Ao lado, um
+// "copiar link" para colar em qualquer lugar, até no próprio app do Chordify.
+function ChordifyLink({ q, className, onCopied }: { q: string; className: string; onCopied: () => void }) {
+  const href = chordifyHref(q)
+  const intent = href.startsWith('intent:')
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <a href={href} {...(intent ? {} : { target: '_blank', rel: 'noopener noreferrer' })} className={className}>
+        Abrir no Chordify ↗
+      </a>
+      <button
+        onClick={() => navigator.clipboard?.writeText(searchUrl.chordify(q)).then(onCopied, () => prompt('Copie o link da busca:', searchUrl.chordify(q)))}
+        className="text-[11px] text-slate-400 underline hover:text-white"
+        title="Copiar o endereço da busca no Chordify"
+      >
+        copiar link
+      </button>
+    </span>
   )
 }
 
