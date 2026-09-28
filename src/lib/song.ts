@@ -473,6 +473,19 @@ export function nextChord(sheet: Sheet, measure: number, beat: number): SongChor
   return null
 }
 
+/** O acorde diferente que tocou antes do que soa em (compasso, tempo). */
+export function prevChord(sheet: Sheet, measure: number, beat: number): SongChord | null {
+  const current = chordAt(sheet.measures[measure], beat)
+  for (let i = measure; i >= 0; i--) {
+    const cs = sheet.measures[i]?.chords ?? []
+    for (let k = cs.length - 1; k >= 0; k--) {
+      if (i === measure && cs[k].beat > beat) continue
+      if (cs[k].chord && !sameChord(cs[k].chord, current)) return cs[k].chord
+    }
+  }
+  return null
+}
+
 /** Acorde soando num tempo do compasso. */
 export function chordAt(m: Measure | undefined, beat: number): SongChord | null {
   if (!m) return null

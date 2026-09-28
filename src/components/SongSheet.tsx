@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { playShapeWithPrefs } from '../lib/audio'
 import { QUALITIES } from '../lib/chords'
-import { chordAt, type Measure, type MeasureChord, type Section, type Sheet, type Song } from '../lib/song'
+import { chordAt, nextChord, prevChord, type Measure, type MeasureChord, type Section, type Sheet, type Song } from '../lib/song'
 import type { PlayPos } from '../lib/songPlayer'
 import { shapeForSongChord, songChordName, toChordRef, type SongChord } from '../lib/songChords'
 import { useStoredState } from '../lib/storage'
@@ -24,13 +24,20 @@ interface Props {
   onSeek?: (measure: number) => void
 }
 
+type ViewMode = 'blocos' | 'corrida' | 'rolagem'
+const VIEWS: { v: ViewMode; label: string }[] = [
+  { v: 'blocos', label: 'Blocos' },
+  { v: 'corrida', label: 'Letra corrida' },
+  { v: 'rolagem', label: 'Rolagem' },
+]
+
 const playChord = (c: SongChord | null) => {
   const s = c && shapeForSongChord(c)
   if (s) playShapeWithPrefs(s)
 }
 
 export function SongSheet({ song, sheet, now, onEditMeasure, onShiftDownbeat, onSeek }: Props) {
-  const [flow, setFlow] = useStoredState('musik-letra-corrida', false)
+  const [view, setView] = useStoredState<ViewMode>('musik-visual', 'blocos')
   const [editing, setEditing] = useState(false)
   const [selected, setSelected] = useState<number | null>(null)
   const currentChord = now ? chordAt(sheet.measures[now.measure], now.beat) : null
@@ -38,8 +45,9 @@ export function SongSheet({ song, sheet, now, onEditMeasure, onShiftDownbeat, on
   const lastLine = useRef<Element | null>(null)
 
   // Karaokê: quando a linha muda, rola a página para ela ficar no meio da tela.
+  // (No modo Rolagem quem anda é a faixa horizontal, não a página.)
   useEffect(() => {
-    if (!now || !root.current) return
+    if (!now || !root.current || view === 'rolagem') return
     const el =
       root.current.querySelector(`[data-measure="${now.measure}"]`) ??
       [...root.current.querySelectorAll<HTMLElement>('[data-measures]')].find((x) => {
@@ -50,7 +58,7 @@ export function SongSheet({ song, sheet, now, onEditMeasure, onShiftDownbeat, on
     if (!line || line === lastLine.current) return
     lastLine.current = line
     line.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  }, [now])
+  }, [now, view])
 
   const select = (i: number) => (editing ? setSelected(i) : onSeek?.(i))
 
@@ -92,18 +100,15 @@ export function SongSheet({ song, sheet, now, onEditMeasure, onShiftDownbeat, on
 
       <ChordSeries sheet={sheet} now={now} />
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-display text-lg font-bold">Letra e compassos</h3>
         <div className="flex gap-1 rounded-full border border-line bg-panel/70 p-1 text-xs" role="group" aria-label="Modo de exibição">
-          {[
-            { v: false, label: 'Blocos' },
-            { v: true, label: 'Letra corrida' },
-          ].map((o) => (
+          {VIEWS.map((o) => (
             <button
-              key={o.label}
-              onClick={() => setFlow(o.v)}
-              aria-pressed={flow === o.v}
-              className={`rounded-full px-3 py-1.5 font-semibold ${flow === o.v ? 'bg-accent text-[#fff]' : 'text-slate-400'}`}
+              key={o.v}
+              onClick={() => setView(o.v)}
+              aria-pressed={view === o.v}
+              className={`rounded-full px-3 py-1.5 font-semibold whitespace-nowrap ${view === o.v ? 'bg-accent text-[#fff]' : 'text-slate-400'}`}
             >
               {o.label}
             </button>
@@ -111,20 +116,24 @@ export function SongSheet({ song, sheet, now, onEditMeasure, onShiftDownbeat, on
         </div>
       </div>
 
-      <div className="flex flex-col gap-6">
-        {sheet.sections.map((sec, i) => (
-          <SectionView
-            key={i}
-            section={sec}
-            beatsPerBar={sheet.beatsPerBar}
-            flow={flow}
-            now={now}
-            editing={editing}
-            selected={selected}
-            onSelect={select}
-          />
-        ))}
-      </div>
+      {view === 'rolagem' ? (
+        <ScrollStrip sheet={sheet} now={now} editing={editing} selected={selected} onSelect={select} />
+      ) : (
+        <div className="flex flex-col gap-5">
+          {sheet.sections.map((sec, i) => (
+            <SectionView
+              key={i}
+              section={sec}
+              beatsPerBar={sheet.beatsPerBar}
+              flow={view === 'corrida'}
+              now={now}
+              editing={editing}
+              selected={selected}
+              onSelect={select}
+            />
+          ))}
+        </div>
+      )}
 
       {editing && selected !== null && sheet.measures[selected] && (
         <EditPanel
@@ -152,31 +161,35 @@ function ChordTable({ chords, current }: { chords: SongChord[]; current: SongCho
   return (
     <div className="sticky top-0 z-20 -mx-2 border-b border-line bg-ink/85 px-2 py-2 backdrop-blur sm:mx-0 sm:rounded-2xl sm:border">
       <div className="scroll-thin flex gap-2 overflow-x-auto pb-1" aria-label="Acordes da música">
-        {chords.map((c) => {
-          const name = songChordName(c)
-          const shape = shapeForSongChord(c)
-          const on = current !== null && songChordName(current) === name
-          return (
-            <button
-              key={name}
-              onClick={() => playChord(c)}
-              aria-label={`Tocar ${name}`}
-              aria-current={on}
-              className={`flex w-[76px] shrink-0 flex-col items-center rounded-xl border p-1 transition ${
-                on ? 'border-accent-2 bg-accent-2/15 shadow-lg shadow-accent-2/30' : 'border-line bg-panel/70 hover:border-slate-500'
-              }`}
-            >
-              <span className={`font-display text-lg leading-tight font-bold ${on ? 'text-accent-2' : ''}`}>{name}</span>
-              {shape ? (
-                <Fretboard shape={shape} analysis={analyze(toChordRef(c))} mini className="w-full" />
-              ) : (
-                <span className="py-6 text-[10px] text-slate-500">sem diagrama</span>
-              )}
-            </button>
-          )
-        })}
+        {chords.map((c) => (
+          <ChordCard key={songChordName(c)} chord={c} active={current !== null && songChordName(current) === songChordName(c)} />
+        ))}
       </div>
     </div>
+  )
+}
+
+/** Cartão com o nome e o diagrama do acorde; tocar nele toca o som. */
+function ChordCard({ chord, active, big, dim }: { chord: SongChord | null; active?: boolean; big?: boolean; dim?: boolean }) {
+  const name = songChordName(chord)
+  const shape = chord && shapeForSongChord(chord)
+  return (
+    <button
+      onClick={() => playChord(chord)}
+      disabled={!chord}
+      aria-label={chord ? `Tocar ${name}` : 'Sem acorde'}
+      aria-current={active}
+      className={`flex shrink-0 flex-col items-center rounded-xl border p-1 transition disabled:opacity-40 ${big ? 'w-[108px]' : 'w-[76px]'} ${
+        active ? 'border-accent-2 bg-accent-2/15 shadow-lg shadow-accent-2/30' : 'border-line bg-panel/70 hover:border-slate-500'
+      } ${dim ? 'opacity-60' : ''}`}
+    >
+      <span className={`font-display leading-tight font-bold ${big ? 'text-2xl' : 'text-lg'} ${active ? 'text-accent-2' : ''}`}>{name}</span>
+      {shape ? (
+        <Fretboard shape={shape} analysis={analyze(toChordRef(chord))} mini className="w-full" />
+      ) : (
+        <span className="py-6 text-[10px] text-slate-500">{chord ? 'sem diagrama' : ''}</span>
+      )}
+    </button>
   )
 }
 
@@ -260,12 +273,13 @@ function SectionView({ section, beatsPerBar, flow, now, editing, selected, onSel
         // INTRO / SOLO / FINAL: por enquanto só o aviso (conteúdo virá depois).
         <InstrumentalBadge section={section} active={active} />
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2">
           {section.lines.map((line, i) =>
             flow ? (
               <FlowLine key={i} measures={line.measures} now={now} onSelect={onSelect} />
             ) : (
-              <div key={i} className="flex flex-wrap gap-1.5" data-line>
+              // Uma linha da letra = uma faixa suave; os compassos são separados por uma linha fina.
+              <div key={i} className="flex flex-wrap overflow-hidden rounded-lg bg-white/[0.03]" data-line>
                 {line.measures.map((m) => (
                   <MeasureBlock
                     key={m.index}
@@ -286,6 +300,110 @@ function SectionView({ section, beatsPerBar, flow, now, editing, selected, onSel
   )
 }
 
+// --- Modo Rolagem: faixa horizontal + quadro anterior / atual / próximo ------------------
+
+type StripItem = { kind: 'label'; section: Section } | { kind: 'measure'; m: Measure; lineStart: boolean } | { kind: 'inst'; section: Section }
+
+interface StripProps {
+  sheet: Sheet
+  now?: PlayPos | null
+  editing: boolean
+  selected: number | null
+  onSelect: (i: number) => void
+}
+
+function ScrollStrip({ sheet, now, editing, selected, onSelect }: StripProps) {
+  const track = useRef<HTMLDivElement>(null)
+  const items: StripItem[] = sheet.sections.flatMap((section): StripItem[] =>
+    section.lines.length
+      ? [
+          { kind: 'label', section },
+          ...section.lines.flatMap((l) => l.measures.map((m, k): StripItem => ({ kind: 'measure', m, lineStart: k === 0 }))),
+        ]
+      : [{ kind: 'inst', section }],
+  )
+  // Parado: mostra o começo (1º compasso com letra).
+  const first = items.find((x) => x.kind === 'measure') as Extract<StripItem, { kind: 'measure' }> | undefined
+  const pos = now ?? (first ? { measure: first.m.index, beat: 0 } : null)
+  const cur = pos ? chordAt(sheet.measures[pos.measure], Math.max(0, pos.beat)) : null
+  const prev = pos ? prevChord(sheet, pos.measure, Math.max(0, pos.beat)) : null
+  const next = pos ? nextChord(sheet, pos.measure, Math.max(0, pos.beat)) : null
+
+  // Mantém o compasso atual no meio da faixa (rola só a faixa, não a página).
+  useEffect(() => {
+    const box = track.current
+    if (!box || !pos) return
+    const el =
+      box.querySelector<HTMLElement>(`[data-measure="${pos.measure}"]`) ??
+      [...box.querySelectorAll<HTMLElement>('[data-measures]')].find((x) => {
+        const [a, b] = x.dataset.measures!.split('-').map(Number)
+        return pos.measure >= a && pos.measure <= b
+      })
+    if (el) box.scrollTo({ left: el.offsetLeft - box.clientWidth / 2 + el.clientWidth / 2, behavior: 'smooth' })
+  }, [pos?.measure]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <section className="rounded-2xl border border-line bg-panel/60 p-2 backdrop-blur sm:p-3" aria-label="Letra em rolagem horizontal">
+      {/* Anterior (esquerda) · atual (centro, maior) · próximo (direita) */}
+      <div className="mb-2 flex items-end justify-center gap-2 sm:gap-4" aria-live="polite">
+        <TrioSlot label="anterior">
+          <ChordCard chord={prev} dim />
+        </TrioSlot>
+        <TrioSlot label="agora">
+          <ChordCard chord={cur} active big />
+        </TrioSlot>
+        <TrioSlot label="próximo">
+          <ChordCard chord={next} dim />
+        </TrioSlot>
+      </div>
+
+      <div className="relative">
+        {/* Marca do centro: onde fica o compasso que está tocando */}
+        <span className="pointer-events-none absolute inset-y-0 left-1/2 z-10 w-0.5 -translate-x-1/2 rounded-full bg-accent-2/50" aria-hidden />
+        <div ref={track} className="scroll-thin relative flex items-stretch overflow-x-auto rounded-lg bg-white/[0.03] py-1">
+          <span className="w-[45%] shrink-0" aria-hidden />
+          {items.map((it) =>
+            it.kind === 'label' ? (
+              <span
+                key={`l${it.section.start}`}
+                className="flex shrink-0 items-center px-2 font-display text-[11px] font-bold tracking-wider text-accent-2/80 uppercase [writing-mode:vertical-rl] rotate-180"
+              >
+                {it.section.label}
+              </span>
+            ) : it.kind === 'inst' ? (
+              <span key={`i${it.section.start}`} className="flex shrink-0 items-center px-2">
+                <InstrumentalBadge section={it.section} active={!!pos && it.section.measures.some((m) => m.index === pos.measure)} />
+              </span>
+            ) : (
+              <MeasureBlock
+                key={it.m.index}
+                m={it.m}
+                beatsPerBar={sheet.beatsPerBar}
+                now={now}
+                editing={editing}
+                selected={selected === it.m.index}
+                onSelect={() => onSelect(it.m.index)}
+                className={`shrink-0 ${it.lineStart ? 'border-l-2! border-accent/40!' : ''} [&>div:last-child]:text-lg`}
+              />
+            ),
+          )}
+          <span className="w-[45%] shrink-0" aria-hidden />
+        </div>
+      </div>
+      <p className="mt-1 text-center text-[11px] text-slate-500">A faixa anda sozinha com a música. Toque num compasso para pular para ele.</p>
+    </section>
+  )
+}
+
+function TrioSlot({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <span className="text-[10px] tracking-wide text-slate-400 uppercase">{label}</span>
+      {children}
+    </div>
+  )
+}
+
 interface BlockProps {
   m: Measure
   beatsPerBar: number
@@ -293,9 +411,10 @@ interface BlockProps {
   editing: boolean
   selected: boolean
   onSelect: () => void
+  className?: string
 }
 
-function MeasureBlock({ m, beatsPerBar, now, editing, selected, onSelect }: BlockProps) {
+function MeasureBlock({ m, beatsPerBar, now, editing, selected, onSelect, className = '' }: BlockProps) {
   const on = now?.measure === m.index
   const n = Math.max(m.beats.length, 1)
   const cols = { gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` }
@@ -304,22 +423,18 @@ function MeasureBlock({ m, beatsPerBar, now, editing, selected, onSelect }: Bloc
       onClick={onSelect}
       {...(editing ? { 'aria-pressed': selected } : { 'aria-label': `Ir para o compasso ${m.index + 1}` })}
       data-measure={m.index}
-      className={`flex min-w-[7.5rem] flex-1 basis-[7.5rem] flex-col gap-1 rounded-xl border px-2 py-1.5 text-left transition sm:max-w-[13rem] ${
-        on
-          ? 'border-accent-2 bg-accent-2/15 shadow-lg shadow-accent-2/25'
-          : selected
-            ? 'border-accent bg-accent/15'
-            : 'border-line bg-panel/70'
-      } ${editing ? 'hover:border-accent' : 'hover:border-slate-500'} ${n < beatsPerBar ? 'opacity-80' : ''}`}
+      className={`flex min-w-[4.75rem] max-w-[11rem] flex-col gap-0.5 border-l border-white/10 px-2 py-1 text-left transition-colors first:border-l-0 ${
+        on ? 'bg-accent-2/15' : selected ? 'bg-accent/20 ring-1 ring-accent ring-inset' : 'hover:bg-white/5'
+      } ${n < beatsPerBar ? 'opacity-80' : ''} ${editing ? 'hover:bg-accent/10' : ''} ${className}`}
     >
       {/* Acordes. Computador: cada um na coluna do tempo em que entra.
           Celular: lado a lado, com o número do tempo em que o 2º acorde entra. */}
-      <div className="flex h-8 items-end gap-2 sm:grid sm:gap-0" style={cols}>
+      <div className="flex h-6 items-end gap-2 sm:grid sm:gap-0" style={cols}>
         {m.chords.map((c, k) => (
           <span
             key={k}
             style={{ gridColumnStart: Math.min(c.beat, n - 1) + 1 }}
-            className={`font-display text-2xl leading-none font-bold whitespace-nowrap ${on ? 'text-white' : 'text-slate-100'}`}
+            className={`font-display text-xl leading-none font-bold whitespace-nowrap ${on ? 'text-accent-2' : 'text-slate-100'}`}
           >
             {songChordName(c.chord)}
             {c.beat > 0 && <sup className="ml-0.5 text-[10px] font-semibold text-accent-2 sm:hidden">{c.beat + 1}</sup>}
@@ -329,17 +444,17 @@ function MeasureBlock({ m, beatsPerBar, now, editing, selected, onSelect }: Bloc
       </div>
       {/* Marcas dos tempos: agrupadas no celular, uma por coluna no computador.
           O anel marca o tempo em que um acorde novo entra no meio do compasso. */}
-      <div className="flex items-center gap-1.5 sm:grid sm:gap-0" style={cols} aria-hidden>
+      <div className="flex items-center gap-1 sm:grid sm:gap-0" style={cols} aria-hidden>
         {m.beats.map((_, b) => (
           <span
             key={b}
-            className={`h-2 w-2 rounded-full transition ${
+            className={`h-1.5 w-1.5 rounded-full transition ${
               on && now!.beat === b ? 'scale-150 bg-accent-2' : on && now!.beat > b ? 'bg-accent-2/60' : b === 0 ? 'bg-slate-400' : 'bg-slate-600'
             } ${b > 0 && m.chords.some((c) => c.beat === b) ? 'ring-2 ring-accent-2/70 ring-offset-1 ring-offset-transparent' : ''}`}
           />
         ))}
       </div>
-      <div className={`min-h-[1.5rem] text-base leading-snug ${on ? 'text-white' : 'text-slate-300'}`}>{m.lyric || ' '}</div>
+      <div className={`min-h-[1.4rem] text-[15px] leading-snug ${on ? 'text-white' : 'text-slate-200'}`}>{m.lyric || ' '}</div>
     </button>
   )
 }

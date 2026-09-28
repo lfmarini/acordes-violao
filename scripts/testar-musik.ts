@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { readChordMidi } from '../src/lib/chordMidi'
 import { parseLrc } from '../src/lib/lrclib'
-import { assemble, chordAt, chordChanges, newSong, nextChord, trackFromTaps, type Song } from '../src/lib/song'
+import { assemble, chordAt, chordChanges, newSong, nextChord, prevChord, trackFromTaps, type Song } from '../src/lib/song'
 import { posAtTime } from '../src/lib/songPlayer'
 import { parsePastedChords, trackFromPaste } from '../src/lib/pasteChords'
 import { trackFromAnalysis, trimLeadingSilence } from '../src/lib/audioAnalysis'
@@ -92,6 +92,8 @@ check(pos?.measure === m0.index && pos.beat === 2, `posição no tempo da grava�
 check(posAtTime(sheet.measures, -0.5) === null, 'antes do início da gravação não acende nada')
 check(posAtTime(sheet.measures, 0.1)?.measure === 0 && !sheet.sections.some((s) => [...s.measures, ...s.lines.flatMap((l) => l.measures)].some((m) => m.index === 0)), 'silêncio inicial fica num compasso que não aparece na página')
 const cur = chordAt(sheet.measures[m0.index], 0)
+const m1 = firstLine.measures[1]
+check(songChordName(prevChord(sheet, m1.index, 0)) === 'G' && songChordName(chordAt(sheet.measures[m1.index], 0)) === 'Em', `"anterior" no modo Rolagem: ${songChordName(prevChord(sheet, m1.index, 0))} ← Em`)
 check(songChordName(cur) === 'G' && songChordName(nextChord(sheet, m0.index, 0)) === 'Em', `"agora" e "a seguir": ${songChordName(cur)} → ${songChordName(nextChord(sheet, m0.index, 0))}`)
 
 const changes = chordChanges(sheet)
