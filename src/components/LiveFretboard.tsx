@@ -35,9 +35,11 @@ interface Props {
   live: LiveResult
   now: number
   on: boolean
+  /** Dentro de outro quadro (ex.: no quadro de amplitude, acima de "Salvar gravação"). */
+  embedded?: boolean
 }
 
-export function LiveFretboard({ hits, live, now, on }: Props) {
+export function LiveFretboard({ hits, live, now, on, embedded = false }: Props) {
   const theme = useTheme()
   const B = theme.board
   const lefty = readStored('canhoto', false)
@@ -75,9 +77,16 @@ export function LiveFretboard({ hits, live, now, on }: Props) {
     .sort((a, b) => a.midi - b.midi)
 
   return (
-    <section className="min-w-0 rounded-2xl border border-line bg-panel/80 p-3 backdrop-blur sm:p-6">
+    // Dentro de outro quadro (embedded): moldura leve, sem borda dupla.
+    <section
+      className={
+        embedded
+          ? 'mt-4 min-w-0 rounded-xl border border-line bg-black/20 p-3'
+          : 'min-w-0 rounded-2xl border border-line bg-panel/80 p-3 backdrop-blur sm:p-6'
+      }
+    >
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="font-display text-xl font-bold">Notas no braço</h2>
+        <h2 className={`font-display font-bold ${embedded ? 'text-base' : 'text-xl'}`}>Violão virtual</h2>
         <span className="text-xs text-slate-400">
           {on ? 'cada nota ouvida acende onde pode ser tocada' : 'ligue o microfone no quadro de amplitude'}
         </span>

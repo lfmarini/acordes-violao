@@ -39,6 +39,8 @@ interface Props {
   onPick: (c: ChordRef) => void
   /** Notas (MIDI) ouvidas a cada análise, para o braço da aba Aprendizado. */
   onNotes?: (midis: number[], result: LiveResult, micOn?: boolean) => void
+  /** Conteúdo mostrado logo acima de "Salvar gravação". */
+  beforeSave?: React.ReactNode
 }
 
 // Opções de salvar: segundos (null = a gravação inteira).
@@ -98,7 +100,7 @@ function prepare(c: HTMLCanvasElement) {
   return { g, w, h }
 }
 
-export function AmplitudeChart({ beats, active, onPick, onNotes }: Props) {
+export function AmplitudeChart({ beats, active, onPick, onNotes, beforeSave }: Props) {
   const onNotesRef = useRef(onNotes)
   useEffect(() => {
     onNotesRef.current = onNotes
@@ -522,6 +524,9 @@ export function AmplitudeChart({ beats, active, onPick, onNotes }: Props) {
         </p>
       )}
       {error && <p className="mt-2 text-sm text-rose-300">{error}</p>}
+
+      {/* Espaço antes de "Salvar gravação" (a aba Aprendizado põe o violão virtual aqui) */}
+      {beforeSave}
 
       {/* Salvar a gravação no aparelho, em MP3 (pequeno) ou WAV (sem perda) */}
       <div className="mt-4 rounded-xl border border-line bg-black/20 p-3">

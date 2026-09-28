@@ -1,10 +1,13 @@
 @import 'tailwindcss';
 @import '@fontsource-variable/space-grotesk';
 @import '@fontsource-variable/inter';
+/* Fonte da assinatura "LFMARINI" (Monoton, licença SIL OFL), só o alfabeto latino. */
+@import '@fontsource/monoton/latin-400.css';
 
 @theme {
   --font-display: 'Space Grotesk Variable', system-ui, sans-serif;
   --font-sans: 'Inter Variable', system-ui, sans-serif;
+  --font-signature: 'Monoton', 'Space Grotesk Variable', system-ui, sans-serif;
   --color-ink: #05060a;
   --color-panel: #0d1019;
   --color-line: #1e2433;

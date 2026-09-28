@@ -141,6 +141,7 @@ export default function App() {
             <h1 className="font-display text-2xl font-bold tracking-tight sm:text-3xl">
               Acordes <span className="text-accent-2">Violão</span>
             </h1>
+            <Signature className="text-xs" />
             <p className="text-sm text-slate-400">Forma no braço, teoria de cada grau e som.</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -378,6 +379,9 @@ export default function App() {
 
         {/* Licença AGPL-3.0 (exigida pelo Essentia.js): o código-fonte fica aberto. */}
         <footer className={`mt-auto pt-6 text-center text-xs text-slate-500 ${tab === 'musik' ? 'pb-36' : ''}`}>
+          <p className="mb-1.5 font-display text-sm text-slate-400">
+            Acordes Violão <Signature />
+          </p>
           Software livre (AGPL-3.0) ·{' '}
           <a href="https://github.com/lfmarini/acordes-violao" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-300">
             código-fonte
@@ -396,6 +400,18 @@ function sliderToStrum(v: number) {
 }
 function strumToSlider(ms: number) {
   return Math.round((100 * Math.log(ms / STRUM_MIN_MS)) / Math.log(STRUM_MAX_MS / STRUM_MIN_MS))
+}
+
+// Assinatura: "por LFMARINI", com LFMARINI na fonte neon (Monoton) e nas cores de destaque do tema.
+function Signature({ className = '' }: { className?: string }) {
+  return (
+    <span className={`text-slate-400 ${className}`}>
+      por{' '}
+      <span className="bg-gradient-to-r from-accent to-accent-2 bg-clip-text font-signature text-[1.35em] tracking-wider text-transparent">
+        LFMARINI
+      </span>
+    </span>
+  )
 }
 
 function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {

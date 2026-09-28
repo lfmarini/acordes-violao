@@ -7,8 +7,9 @@ import { HIT_FADE_MS, LiveFretboard } from './LiveFretboard'
 import { MetronomePanel } from './MetronomePanel'
 
 // Aba "Aprendizado": metrônomo e gráfico de amplitude, lado a lado no
-// computador e um embaixo do outro no celular; embaixo, o braço inteiro com
-// as notas que o microfone identifica. As batidas do metrônomo
+// computador e um embaixo do outro no celular. O "violão virtual" (o braço
+// inteiro com as notas que o microfone identifica) fica dentro do quadro de
+// amplitude, logo acima de "Salvar gravação". As batidas do metrônomo
 // são repassadas ao gráfico para aparecerem como linhas verticais.
 export function Learning({ active, onPick }: { active: boolean; onPick: (c: ChordRef) => void }) {
   const beats = useRef<BeatMark[]>([])
@@ -34,10 +35,13 @@ export function Learning({ active, onPick }: { active: boolean; onPick: (c: Chor
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:gap-6 lg:grid-cols-[400px_minmax(0,1fr)]">
       <MetronomePanel onBeat={onBeat} active={active} />
-      <AmplitudeChart beats={beats} active={active} onPick={onPick} onNotes={onNotes} />
-      <div className="lg:col-span-2">
-        <LiveFretboard hits={heard.hits} live={heard.live} now={heard.now} on={heard.on} />
-      </div>
+      <AmplitudeChart
+        beats={beats}
+        active={active}
+        onPick={onPick}
+        onNotes={onNotes}
+        beforeSave={<LiveFretboard hits={heard.hits} live={heard.live} now={heard.now} on={heard.on} embedded />}
+      />
     </div>
   )
 }
