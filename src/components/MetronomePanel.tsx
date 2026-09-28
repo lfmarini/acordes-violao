@@ -105,7 +105,7 @@ export function MetronomePanel({ onBeat, active }: Props) {
         <button
           onClick={() => setBpm(clampBpm(bpm - 1))}
           aria-label="Diminuir 1 BPM"
-          className="grid h-12 w-12 place-items-center rounded-full bg-white/5 text-2xl hover:bg-white/10"
+          className="btn btn-round h-12 w-12 p-0 text-2xl"
         >
           −
         </button>
@@ -116,7 +116,7 @@ export function MetronomePanel({ onBeat, active }: Props) {
         <button
           onClick={() => setBpm(clampBpm(bpm + 1))}
           aria-label="Aumentar 1 BPM"
-          className="grid h-12 w-12 place-items-center rounded-full bg-white/5 text-2xl hover:bg-white/10"
+          className="btn btn-round h-12 w-12 p-0 text-2xl"
         >
           +
         </button>
@@ -139,13 +139,11 @@ export function MetronomePanel({ onBeat, active }: Props) {
       <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
         <button
           onClick={toggle}
-          className={`min-w-36 rounded-full px-6 py-3 font-semibold text-white shadow-lg transition active:scale-95 ${
-            running ? 'bg-rose-500/90 shadow-rose-500/30' : 'bg-gradient-to-r from-accent to-accent-2 shadow-accent/30'
-          }`}
+          className={`btn btn-round min-w-36 px-6 py-3 text-base ${running ? 'btn-danger' : 'btn-primary'}`}
         >
           {running ? '■ Parar' : '▶ Iniciar'}
         </button>
-        <button onClick={tap} className="rounded-full border border-line px-5 py-3 text-sm text-slate-200 hover:border-slate-500">
+        <button onClick={tap} className="btn btn-round px-5 py-3">
           Bater o tempo
         </button>
       </div>

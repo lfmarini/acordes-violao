@@ -40,3 +40,79 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Botões com cara de botão (relevo, sombra e "afundam" ao clicar).
+   Ficam na camada "components" para as classes do Tailwind poderem ajustar. */
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 0.75rem;
+    padding: 0.55rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #f1f5f9;
+    background: linear-gradient(180deg, #262e41, #171c28);
+    border: 1px solid #36405a;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.09),
+      0 3px 0 #090c13,
+      0 6px 14px rgba(0, 0, 0, 0.35);
+    transition:
+      transform 0.08s,
+      box-shadow 0.08s,
+      filter 0.15s;
+    cursor: pointer;
+    user-select: none;
+  }
+  .btn:hover {
+    filter: brightness(1.15);
+  }
+  .btn:active {
+    transform: translateY(2px);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      0 1px 0 #090c13;
+  }
+  .btn:focus-visible {
+    outline: 2px solid #22d3ee;
+    outline-offset: 2px;
+  }
+  .btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    filter: none;
+    transform: none;
+  }
+  .btn-primary {
+    background: linear-gradient(180deg, #8f72ff, #5a3ddd);
+    border-color: #a38cff;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.25),
+      0 3px 0 #33208a,
+      0 8px 18px rgba(124, 92, 255, 0.35);
+  }
+  .btn-primary:active {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.2),
+      0 1px 0 #33208a;
+  }
+  .btn-danger {
+    background: linear-gradient(180deg, #f8627a, #cf2f4c);
+    border-color: #ff8a9d;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.25),
+      0 3px 0 #7d1426,
+      0 8px 18px rgba(244, 63, 94, 0.35);
+  }
+  .btn-danger:active {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.2),
+      0 1px 0 #7d1426;
+  }
+  .btn-round {
+    border-radius: 9999px;
+  }
+}
