@@ -8,11 +8,13 @@ interface Props {
   onBeat: (beat: number, at: number) => void
   /** Se a aba Aprendizado está aberta (a barra de espaço só funciona nela). */
   active: boolean
+  /** Avisado quando o BPM ou o compasso mudam (o violão virtual usa para saber quanto dura um compasso). */
+  onTempo?: (bpm: number, beatsPerBar: number) => void
 }
 
 const clampBpm = (v: number) => Math.min(BPM_MAX, Math.max(BPM_MIN, Math.round(v)))
 
-export function MetronomePanel({ onBeat, active }: Props) {
+export function MetronomePanel({ onBeat, active, onTempo }: Props) {
   const [bpm, setBpm] = useStoredState('metronomo-bpm', BPM_DEFAULT)
   const [beats, setBeats] = useStoredState('metronomo-compasso', 4)
   const [volume, setVolume] = useStoredState('metronomo-volume', 0.8)
@@ -35,6 +37,8 @@ export function MetronomePanel({ onBeat, active }: Props) {
     metro.current = m
     return () => m.stop()
   }, [])
+
+  useEffect(() => onTempo?.(bpm, beats), [bpm, beats, onTempo])
 
   // Mudanças de andamento, compasso e volume valem na hora, mesmo tocando.
   useEffect(() => {

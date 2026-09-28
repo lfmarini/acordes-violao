@@ -36,7 +36,35 @@ body {
   scrollbar-color: #2a3142 transparent;
 }
 
+/* Violão virtual: a nota ouvida acende e vai esvaecendo até sumir.
+   A duração (1 compasso do metrônomo) vem pelo estilo do elemento. */
+@keyframes fret-fade {
+  0% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  15% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+.fret-fade {
+  animation-name: fret-fade;
+  animation-timing-function: ease-in;
+  animation-fill-mode: forwards;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  /* Sem animação, a nota fica acesa e sai quando o tempo acaba. */
+  .fret-fade {
+    animation: none !important;
+  }
   *,
   *::before,
   *::after {

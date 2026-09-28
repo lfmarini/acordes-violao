@@ -122,6 +122,20 @@ export const THEMES: Theme[] = [
 
 export const DEFAULT_THEME: ThemeId = 'neon'
 
+// ---------------------------------------------------------------------------
+// Paleta de tons: uma cor para cada uma das 12 notas, dando a volta na roda
+// de cores (Dó vermelho, Mi amarelo, Sol verde-azulado, Lá azul...). Notas
+// vizinhas têm cores vizinhas, e a mesma nota tem sempre a mesma cor em
+// qualquer corda ou oitava. No tema claro as cores ficam mais escuras.
+// ---------------------------------------------------------------------------
+
+export const TONE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const
+
+export function toneColor(pc: number, theme: Theme): Dot {
+  const hue = ((((pc % 12) + 12) % 12) * 30 + 350) % 360 // Dó começa no vermelho
+  return theme.light ? { color: `hsl(${hue} 72% 42%)`, ink: '#ffffff' } : { color: `hsl(${hue} 85% 63%)`, ink: '#111318' }
+}
+
 // No tema claro invertemos os cinzas e o branco/preto do Tailwind: assim
 // "text-white" vira texto escuro, "text-slate-400" um cinza médio legível etc.
 const LIGHT_OVERRIDES: Record<string, string> = {

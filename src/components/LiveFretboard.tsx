@@ -1,21 +1,20 @@
 import { Note } from 'tonal'
 import { OPEN_STRINGS, STRING_NAMES } from '../lib/chords'
-import type { LiveResult } from '../lib/liveDetect'
 import { readStored } from '../lib/storage'
-import { useTheme } from '../lib/themes'
-import { analyze } from '../lib/theory'
+import { TONE_NAMES, toneColor, useTheme } from '../lib/themes'
 
 // ---------------------------------------------------------------------------
 // Braço inteiro (casas 0 a 12) na horizontal, como numa tablatura: a 1ª corda
 // (Mi agudo) em cima e a 6ª (Mi grave) embaixo. Cada nota que o microfone
 // identifica acende em TODAS as casas onde aquela mesma nota (com a oitava)
 // pode ser tocada — ex.: A2 = 5ª corda solta ou 6ª corda casa 5.
-// As notas vão apagando aos poucos depois que param de soar.
+// Cada nota tem a sua cor (paleta de tons) e vai esvaecendo até sumir, no
+// tempo de um compasso do metrônomo (`fadeMs`). Tocou de novo, reacende.
 // ---------------------------------------------------------------------------
 
 export const LAST_FRET = 12
-/** Tempo (ms) que uma nota continua acesa depois de ouvida pela última vez. */
-export const HIT_FADE_MS = 1500
+/** Tempo padrão (ms) até a nota sumir, se ninguém informar o do compasso. */
+export const HIT_FADE_MS = 2000
 
 const OPEN_MIDI = OPEN_STRINGS.map((n) => Note.midi(n)!) // 40, 45, 50, 55, 59, 64
 const INLAYS = [3, 5, 7, 9]
@@ -32,14 +31,17 @@ function positionsOf(midi: number) {
 
 interface Props {
   hits: Map<number, number> // nota MIDI -> quando foi ouvida por último (performance.now)
-  live: LiveResult
   now: number
   on: boolean
   /** Dentro de outro quadro (ex.: no quadro de amplitude, acima de "Salvar gravação"). */
   embedded?: boolean
+  /** Tempo (ms) até a nota sumir: um compasso do metrônomo. */
+  fadeMs?: number
+  /** Texto curto explicando esse tempo (ex.: "1 compasso de 4 tempos a 120 BPM"). */
+  fadeHint?: string
 }
 
-export function LiveFretboard({ hits, live, now, on, embedded = false }: Props) {
+export function LiveFretboard({ hits, now, on, embedded = false, fadeMs = HIT_FADE_MS, fadeHint }: Props) {
   const theme = useTheme()
   const B = theme.board
   const lefty = readStored('canhoto', false)
@@ -64,17 +66,15 @@ export function LiveFretboard({ hits, live, now, on, embedded = false }: Props) 
   // 1ª corda (índice 5) em cima, 6ª (índice 0) embaixo
   const cy = (s: number) => TOP + (5 - s) * SG
 
-  // Se o que soa é um acorde, cada nota ganha a cor do seu grau.
-  const members = live.kind === 'chord' ? analyze(live.chord).byChroma : null
-  const colorOf = (midi: number) => {
-    const m = members?.get(((midi % 12) + 12) % 12)
-    return m ? theme.degrees[m.degree] : { color: theme.ui.accent2, ink: '#0b0d12' }
-  }
+  // Cor de cada nota pela paleta de tons (a mesma nota, a mesma cor).
+  const colorOf = (midi: number) => toneColor(midi % 12, theme)
 
   const active = [...hits.entries()]
-    .map(([midi, at]) => ({ midi, age: now - at }))
-    .filter((h) => h.age < HIT_FADE_MS)
+    .map(([midi, at]) => ({ midi, at, age: now - at }))
+    .filter((h) => h.age < fadeMs)
     .sort((a, b) => a.midi - b.midi)
+  const soundingPcs = new Set(active.map((h) => h.midi % 12))
+  const secs = (fadeMs / 1000).toFixed(1).replace('.', ',')
 
   return (
     // Dentro de outro quadro (embedded): moldura leve, sem borda dupla.
@@ -88,7 +88,8 @@ export function LiveFretboard({ hits, live, now, on, embedded = false }: Props) 
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className={`font-display font-bold ${embedded ? 'text-base' : 'text-xl'}`}>Violão virtual</h2>
         <span className="text-xs text-slate-400">
-          {on ? 'cada nota ouvida acende onde pode ser tocada' : 'ligue o microfone no quadro de amplitude'}
+          {on ? 'cada nota ouvida acende onde pode ser tocada' : 'ligue o microfone no quadro de amplitude'} · some em {secs} s
+          {fadeHint ? ` (${fadeHint})` : ''}
         </span>
       </div>
 
@@ -138,13 +139,13 @@ export function LiveFretboard({ hits, live, now, on, embedded = false }: Props) 
             </text>
           ))}
 
-          {/* notas identificadas */}
-          {active.flatMap(({ midi, age }) => {
+          {/* Notas identificadas. A chave inclui o instante em que a nota foi
+              ouvida: tocou de novo, o elemento é recriado e o esvaecer recomeça. */}
+          {active.flatMap(({ midi, at }) => {
             const c = colorOf(midi)
-            const fade = 1 - age / HIT_FADE_MS
             const name = Note.fromMidiSharps(midi)
             return positionsOf(midi).map(({ s, fret }) => (
-              <g key={`${midi}-${s}`} opacity={0.25 + 0.75 * fade}>
+              <g key={`${midi}-${s}-${at}`} className="fret-fade" style={{ animationDuration: `${fadeMs}ms` }}>
                 <circle cx={cx(fret)} cy={cy(s)} r={11.5} fill={c.color} stroke="rgba(0,0,0,0.35)" strokeWidth={1.5} />
                 <text x={cx(fret)} y={cy(s) + 3.5} textAnchor="middle" fontSize={name.length > 2 ? 8 : 9.5} fontWeight={800} fill={c.ink}>
                   {name}
@@ -153,6 +154,23 @@ export function LiveFretboard({ hits, live, now, on, embedded = false }: Props) 
             ))
           })}
         </svg>
+      </div>
+
+      {/* Legenda da paleta de tons: as notas que estão soando ficam destacadas. */}
+      <div className="mt-2 flex flex-wrap gap-1" aria-label="Cores de cada nota">
+        {TONE_NAMES.map((n, pc) => {
+          const c = toneColor(pc, theme)
+          const lit = soundingPcs.has(pc)
+          return (
+            <span
+              key={n}
+              className={`rounded-md px-1.5 py-0.5 font-display text-[11px] font-bold transition ${lit ? 'scale-110 shadow' : 'opacity-60'}`}
+              style={{ background: c.color, color: c.ink }}
+            >
+              {n}
+            </span>
+          )
+        })}
       </div>
 
       {/* Lista em texto: onde tocar cada nota ouvida */}
