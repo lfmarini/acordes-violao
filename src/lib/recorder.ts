@@ -45,6 +45,11 @@ export class Recorder {
   sampleRate = 48000
   private node: AudioWorkletNode | null = null
 
+  /** Horário (performance.now) da 1ª amostra ainda guardada: o início do replay. */
+  get startTime() {
+    return this.startPerf + ((this.total - this.length) / this.sampleRate) * 1000
+  }
+
   /** Segundos gravados até agora. */
   get seconds() {
     return this.length / this.sampleRate

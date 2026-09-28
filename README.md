@@ -44,7 +44,8 @@ e no computador.
   está ligado o som é gravado, e dá para salvar um arquivo MP3 (padrão, ~1 MB
   por minuto) ou WAV (sem perda, ~6x maior) com os últimos
   10 s, 30 s, 1 min ou a gravação inteira. Uma trilha pequena abaixo do gráfico
-  mostra o último minuto. Com o microfone ligado, o quadro "Tocando agora"
+  mostra o último minuto: arraste nela para ver outro trecho no gráfico de 8 s
+  (com o replay aberto, o áudio pula para o mesmo ponto e o gráfico acompanha). Com o microfone ligado, o quadro "Tocando agora"
   identifica a nota (com a afinação em cents) ou o acorde que está soando e
   marca cada troca no gráfico. Dá para ouvir a última gravação no próprio app,
   escolher se o som do metrônomo entra no arquivo e ligar a redução de ruído

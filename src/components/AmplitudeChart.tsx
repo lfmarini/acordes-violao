@@ -140,16 +140,40 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
     }
   }
 
-  const draw = useCallback(() => {
-    const now = performance.now()
+  // Posição da visualização. \`liveRef\`: microfone ligado (o fim da trilha é
+  // "agora"). \`cursorRef\`: fim da janela de 8 s quando você arrasta a trilha
+  // ou o replay está tocando (null = acompanha o fim).
+  const liveRef = useRef(false)
+  const cursorRef = useRef<number | null>(null)
+  const audioRef = useRef<HTMLAudioElement>(null)
+  const [browsing, setBrowsing] = useState(false)
 
-    // ---- Gráfico principal (últimos 8 s) ----
+  const endTime = useCallback(
+    () =>
+      liveRef.current || !samples.current.length ? performance.now() : samples.current[samples.current.length - 1].t,
+    [],
+  )
+  // Instante (no relógio das amostras) que o replay está tocando agora.
+  const playTime = useCallback(() => {
+    const au = audioRef.current
+    const rec = recorder.current
+    if (!au || !rec || !au.src) return null
+    return rec.startTime + au.currentTime * 1000
+  }, [])
+
+  const draw = useCallback(() => {
+    const end = endTime()
+    const view = Math.min(end, cursorRef.current ?? end) // fim da janela de 8 s
+    const play = playTime()
+
+    // ---- Gráfico principal (8 s) ----
     if (canvas.current) {
       const { g, w, h } = prepare(canvas.current)
       const left = 34
       const plotW = w - left - 6
-      const x = (t: number) => left + plotW * (1 - (now - t) / (WINDOW_S * 1000))
+      const x = (t: number) => left + plotW * (1 - (view - t) / (WINDOW_S * 1000))
       const y = (db: number) => 20 + (h - 38) * (db / DB_FLOOR)
+      const inView = (t: number) => t <= view && view - t <= WINDOW_S * 1000
 
       g.font = '10px Inter Variable, sans-serif'
       g.fillStyle = '#64748b'
@@ -162,22 +186,25 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
         g.stroke()
         g.fillText(`${db}`, 2, y(db) + 3)
       }
+      // Tempo em relação ao fim da gravação ("agora" quando ao vivo).
       for (let s = 0; s <= WINDOW_S; s += 2) {
         const xx = left + plotW * (1 - s / WINDOW_S)
-        g.fillText(s === 0 ? 'agora' : `-${s}s`, xx - (s === 0 ? 28 : 8), h - 4)
+        const ago = Math.round((end - view) / 1000) + s
+        const label = ago === 0 ? (liveRef.current ? 'agora' : 'fim') : `-${ago}s`
+        g.fillText(label, xx - (s === 0 ? 22 : 8), h - 4)
       }
 
-      for (const b of beats.current ?? []) {
-        if (b.at > now || now - b.at > WINDOW_S * 1000) continue
-        g.strokeStyle = b.accent ? 'rgba(124,92,255,0.8)' : 'rgba(124,92,255,0.35)'
-        g.lineWidth = b.accent ? 2 : 1
+      for (const bt of beats.current ?? []) {
+        if (!inView(bt.at)) continue
+        g.strokeStyle = bt.accent ? 'rgba(124,92,255,0.8)' : 'rgba(124,92,255,0.35)'
+        g.lineWidth = bt.accent ? 2 : 1
         g.beginPath()
-        g.moveTo(x(b.at), 20)
-        g.lineTo(x(b.at), h - 18)
+        g.moveTo(x(bt.at), 20)
+        g.lineTo(x(bt.at), h - 18)
         g.stroke()
       }
 
-      const pts = samples.current.filter((p) => now - p.t <= WINDOW_S * 1000)
+      const pts = samples.current.filter((pt) => inView(pt.t))
       if (pts.length > 1) {
         const grad = g.createLinearGradient(0, y(0), 0, y(DB_FLOOR))
         grad.addColorStop(0, 'rgba(255,92,108,0.9)')
@@ -185,13 +212,13 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
         grad.addColorStop(1, 'rgba(34,211,238,0.05)')
         g.beginPath()
         g.moveTo(x(pts[0].t), y(DB_FLOOR))
-        for (const p of pts) g.lineTo(x(p.t), y(p.db))
+        for (const pt of pts) g.lineTo(x(pt.t), y(pt.db))
         g.lineTo(x(pts[pts.length - 1].t), y(DB_FLOOR))
         g.closePath()
         g.fillStyle = grad
         g.fill()
         g.beginPath()
-        pts.forEach((p, i) => (i ? g.lineTo(x(p.t), y(p.db)) : g.moveTo(x(p.t), y(p.db))))
+        pts.forEach((pt, i) => (i ? g.lineTo(x(pt.t), y(pt.db)) : g.moveTo(x(pt.t), y(pt.db))))
         g.strokeStyle = '#67e8f9'
         g.lineWidth = 1.5
         g.stroke()
@@ -200,42 +227,98 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
       // Nomes das notas/acordes identificados, no momento em que começaram.
       g.font = '600 11px Space Grotesk Variable, sans-serif'
       for (const m of marks.current) {
-        if (now - m.t > WINDOW_S * 1000) continue
+        if (!inView(m.t)) continue
         const xx = x(m.t)
         g.fillStyle = 'rgba(255,197,66,0.9)'
         g.fillRect(xx, 4, 1.5, 12)
         g.fillText(m.label, xx + 4, 14)
+      }
+
+      // Onde o replay está tocando.
+      if (play !== null && inView(play)) {
+        g.strokeStyle = '#ffffff'
+        g.lineWidth = 2
+        g.beginPath()
+        g.moveTo(x(play), 18)
+        g.lineTo(x(play), h - 16)
+        g.stroke()
       }
     }
 
     // ---- Trilha de histórico (último 1 min) ----
     if (track.current) {
       const { g, w, h } = prepare(track.current)
-      const x = (t: number) => w * (1 - (now - t) / (HISTORY_S * 1000))
+      const x = (t: number) => w * (1 - (end - t) / (HISTORY_S * 1000))
       // Colunas: o maior volume de cada fatia de tempo.
       const cols = Math.max(1, Math.floor(w / 3))
       const slice = (HISTORY_S * 1000) / cols
       const maxes = new Array(cols).fill(DB_FLOOR)
-      for (const p of samples.current) {
-        const k = Math.floor((p.t - (now - HISTORY_S * 1000)) / slice)
-        if (k >= 0 && k < cols) maxes[k] = Math.max(maxes[k], p.db)
+      for (const pt of samples.current) {
+        const k = Math.floor((pt.t - (end - HISTORY_S * 1000)) / slice)
+        if (k >= 0 && k < cols) maxes[k] = Math.max(maxes[k], pt.db)
       }
       g.fillStyle = '#22d3ee'
       maxes.forEach((db, k) => {
         const bh = (h - 4) * (1 - db / DB_FLOOR)
         if (bh > 0.5) g.fillRect(k * (w / cols), h - 2 - bh, Math.max(1, w / cols - 1), bh)
       })
-      // Trecho que aparece no gráfico grande.
-      const x0 = x(now - WINDOW_S * 1000)
-      g.fillStyle = 'rgba(124,92,255,0.18)'
-      g.fillRect(x0, 0, w - x0, h)
-      g.strokeStyle = 'rgba(124,92,255,0.8)'
-      g.lineWidth = 1
-      g.strokeRect(x0 + 0.5, 0.5, w - x0 - 1, h - 1)
+      // Trecho que aparece no gráfico grande (arraste para mudar).
+      const x0 = x(view - WINDOW_S * 1000)
+      const x1 = x(view)
+      g.fillStyle = 'rgba(124,92,255,0.22)'
+      g.fillRect(x0, 0, x1 - x0, h)
+      g.strokeStyle = 'rgba(163,140,255,0.95)'
+      g.lineWidth = 1.5
+      g.strokeRect(x0 + 0.75, 0.75, x1 - x0 - 1.5, h - 1.5)
       g.fillStyle = 'rgba(255,197,66,0.9)'
-      for (const m of marks.current) if (now - m.t <= HISTORY_S * 1000) g.fillRect(x(m.t), 0, 1, 5)
+      for (const m of marks.current) if (end - m.t <= HISTORY_S * 1000) g.fillRect(x(m.t), 0, 1, 5)
+      if (play !== null) {
+        g.fillStyle = '#ffffff'
+        g.fillRect(x(play) - 1, 0, 2, h)
+      }
     }
-  }, [beats])
+  }, [beats, endTime, playTime])
+
+  // Arrastar (ou tocar) a trilha de 1 min: a janela de 8 s fica centrada no
+  // ponto escolhido e, se o replay estiver aberto, ele pula para lá.
+  const scrub = (clientX: number) => {
+    const el = track.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const end = endTime()
+    const t = end - HISTORY_S * 1000 + ((clientX - r.left) / r.width) * HISTORY_S * 1000
+    const first = samples.current[0]?.t ?? end
+    const cursor = Math.max(Math.min(t + (WINDOW_S * 1000) / 2, end), Math.min(end, first + WINDOW_S * 1000))
+    cursorRef.current = cursor >= end - 100 ? null : cursor
+    setBrowsing(cursorRef.current !== null)
+    const au = audioRef.current
+    const rec = recorder.current
+    if (au && rec && replayUrl) au.currentTime = Math.max(0, Math.min(au.duration || Infinity, (t - rec.startTime) / 1000))
+    draw()
+  }
+  const backToLive = () => {
+    cursorRef.current = null
+    setBrowsing(false)
+    draw()
+  }
+
+  // Durante o replay, o gráfico acompanha o que está tocando.
+  useEffect(() => {
+    const au = audioRef.current
+    if (!au || !replayUrl) return
+    let raf = 0
+    const tick = () => {
+      const play = playTime()
+      if (play !== null && !au.paused) {
+        cursorRef.current = Math.min(endTime(), play + (WINDOW_S * 1000) / 2)
+        setBrowsing(true)
+      }
+      draw()
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [replayUrl, draw, endTime, playTime])
 
   const start = async () => {
     setError('')
@@ -338,6 +421,9 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
       raf = requestAnimationFrame(loop)
     }
     raf = requestAnimationFrame(loop)
+    liveRef.current = true
+    cursorRef.current = null
+    setBrowsing(false)
     setOn(true)
 
     stopRef.current = () => {
@@ -348,6 +434,7 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
       denoiser.current = null
       stream.getTracks().forEach((tr) => tr.stop())
       void ctx.close()
+      liveRef.current = false
       setOn(false)
       stopRef.current = () => {}
     }
@@ -368,7 +455,7 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
   }, [draw])
 
   return (
-    <section className="rounded-2xl border border-line bg-panel/80 p-4 backdrop-blur sm:p-6">
+    <section className="min-w-0 rounded-2xl border border-line bg-panel/80 p-3 backdrop-blur sm:p-6">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-display text-xl font-bold">Amplitude sonora</h2>
         <button onClick={() => (on ? stopRef.current() : void start())} className={`btn btn-round ${on ? 'btn-danger' : 'btn-primary'}`}>
@@ -383,12 +470,28 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
 
       {/* Trilha pequena: o último minuto, com o trecho do gráfico grande destacado */}
       <div className="mt-2">
-        <canvas ref={track} className="h-10 w-full rounded-lg bg-black/30" aria-label="Histórico da amplitude no último minuto" />
+        <canvas
+          ref={track}
+          className="h-12 w-full cursor-ew-resize touch-none rounded-lg bg-black/30"
+          aria-label="Histórico da amplitude no último minuto. Arraste para ver outro trecho no gráfico grande."
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId)
+            scrub(e.clientX)
+          }}
+          onPointerMove={(e) => {
+            if (e.currentTarget.hasPointerCapture(e.pointerId)) scrub(e.clientX)
+          }}
+        />
         <div className="mt-0.5 flex justify-between text-[10px] text-slate-500">
           <span>-1 min</span>
-          <span>-30 s</span>
-          <span>agora</span>
+          <span>{browsing ? 'arraste para escolher o trecho' : '-30 s'}</span>
+          <span>{on ? 'agora' : 'fim'}</span>
         </div>
+        {browsing && !replayUrl && (
+          <button onClick={backToLive} className="btn btn-round mt-1 px-3 py-1 text-xs">
+            {on ? '⟳ Voltar ao vivo' : '⇥ Ir para o fim'}
+          </button>
+        )}
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
@@ -484,7 +587,7 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
             ▶ {on ? 'Parar e ouvir a gravação' : 'Ouvir a última gravação'}
           </button>
           {replayUrl && (
-            <audio key={replayUrl} src={replayUrl} controls autoPlay className="h-10 min-w-0 flex-1" />
+            <audio ref={audioRef} key={replayUrl} src={replayUrl} controls autoPlay className="h-10 min-w-0 flex-1" />
           )}
         </div>
 
