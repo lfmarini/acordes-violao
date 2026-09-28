@@ -58,9 +58,18 @@ export interface Song {
   meter?: Meter // compasso escolhido (senão, o do MIDI)
   countIn?: number // contagem de entrada, em batidas (0 = sem)
   autoTrack?: ChordTrack // marcação automática guardada quando você "marca o tempo"
+  tab?: SongTab // tablatura/partitura dos trechos INTRO, SOLO e FINAL
   sheet?: Sheet
   createdAt: number
   updatedAt: number
+}
+
+/** Arquivo de tablatura (Guitar Pro ou MusicXML) guardado com a música. */
+export interface SongTab {
+  name: string
+  bytes: ArrayBuffer
+  track?: number // faixa escolhida à mão (senão, a automática)
+  shifts: Record<string, number> // correção ◀ ▶ de cada trecho ("solo-1": +2 compassos)
 }
 
 export interface Measure {

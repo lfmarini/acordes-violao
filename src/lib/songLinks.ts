@@ -4,6 +4,7 @@ export const searchUrl = {
   songsterr: (q: string) => `https://www.songsterr.com/?pattern=${encodeURIComponent(q)}`,
   cifraclub: (q: string) => `https://www.cifraclub.com.br/?q=${encodeURIComponent(q)}`,
   youtube: (q: string) => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`,
+  ultimateGuitar: (q: string) => `https://www.ultimate-guitar.com/search.php?search_type=title&value=${encodeURIComponent(q)}`,
 }
 
 /** Id do vídeo a partir de um link do YouTube (watch, youtu.be, shorts, embed, live). */

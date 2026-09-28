@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { readChordMidi, type ChordTrack } from '../lib/chordMidi'
 import { fmtDuration, parseLrc, plainLines, searchLrclib, type LrclibTrack } from '../lib/lrclib'
-import { canPickFolder, guessSong, isMidiName, latestMidiFromDownloads, matchScore, takeSharedFiles } from '../lib/midiImport'
+import { canPickFolder, guessSong, isMidiName, isTabName, latestFromDownloads, matchScore, takeSharedFiles } from '../lib/midiImport'
 import { parsePastedChords, trackFromPaste } from '../lib/pasteChords'
 import { assemble, chordAt, newSong, nextChord, type ChordSource, type MeasureChord, type Song } from '../lib/song'
 import { useChordAnalysis } from '../lib/useChordAnalysis'
@@ -23,11 +23,11 @@ import { VideoPanel } from './VideoPanel'
 // em blocos de compasso. Tudo fica salvo no aparelho (IndexedDB).
 // ---------------------------------------------------------------------------
 
-interface Pending {
-  file: File
-  bytes: ArrayBuffer
-  track: ChordTrack
-}
+// Arquivo importado esperando saber de qual música é: MIDI de acordes ou tablatura.
+type Pending = { kind: 'midi'; file: File; bytes: ArrayBuffer; track: ChordTrack } | { kind: 'tab'; file: File; bytes: ArrayBuffer }
+
+// A tela da tablatura usa o alphaTab (grande): só é baixada quando precisa.
+const TabSettings = lazy(() => import('./TabSettings'))
 
 export function MusikPlayer({ active }: { active: boolean }) {
   const [query, setQuery] = useState('')
@@ -143,15 +143,33 @@ export function MusikPlayer({ active }: { active: boolean }) {
     await save(newSong({ id, lrclibId: t.id, title: t.trackName, artist: t.artistName, album: t.albumName ?? '', duration: t.duration, lyrics, synced }))
   }
 
-  // --- Importação do MIDI ------------------------------------------------------
+  // --- Importação do MIDI e da tablatura ------------------------------------------------
   const attach = async (target: Song, p: Pending) => {
     setPending(null)
+    if (p.kind === 'tab') {
+      await save({ ...target, tab: { name: p.file.name, bytes: p.bytes, shifts: {} } })
+      setMessage({ kind: 'ok', text: `Tablatura "${p.file.name}" ligada a "${target.title}". Ela aparece nos trechos INTRO, SOLO e FINAL.` })
+      return
+    }
     await save({ ...target, midi: p.bytes, midiName: p.file.name, track: p.track, source: 'midi', measureEdits: {}, downbeatShift: 0 })
     setMessage({ kind: 'ok', text: `Acordes de "${p.file.name}" ligados a "${target.title}".` })
   }
 
   const importFile = async (file: File) => {
     setMessage(null)
+    if (isTabName(file.name)) {
+      let p: Pending
+      try {
+        const bytes = await file.arrayBuffer()
+        const { loadTab } = await import('../lib/tabScore') // confere se o arquivo abre
+        loadTab(bytes)
+        p = { kind: 'tab', file, bytes }
+      } catch {
+        setMessage({ kind: 'error', text: `Não consegui ler a tablatura "${file.name}". Ela pode estar danificada ou numa versão que o leitor não conhece.` })
+        return
+      }
+      return pickSongFor(p)
+    }
     if (!isMidiName(file.name) && !/midi/.test(file.type)) {
       // Arquivo de áudio: analisa para a música aberta.
       if (file.type.startsWith('audio/') || /\.(mp3|m4a|ogg|oga|wav|flac|aac)$/i.test(file.name)) {
@@ -159,29 +177,33 @@ export function MusikPlayer({ active }: { active: boolean }) {
         if (replaceOk()) void analysis.analyzeFile(file)
         return
       }
-      setMessage({ kind: 'error', text: `"${file.name}" não é um MIDI (.mid) nem um arquivo de áudio.` })
+      setMessage({ kind: 'error', text: `"${file.name}" não é um MIDI (.mid), uma tablatura (.gp, .musicxml) nem um arquivo de áudio.` })
       return
     }
     let p: Pending
     try {
       const bytes = await file.arrayBuffer()
-      p = { file, bytes, track: readChordMidi(bytes) }
+      p = { kind: 'midi', file, bytes, track: readChordMidi(bytes) }
     } catch (err) {
       setMessage({ kind: 'error', text: `Não consegui ler "${file.name}": ${err instanceof Error ? err.message : 'arquivo inválido'}.` })
       return
     }
-    // Pelo nome do arquivo: a música aberta, ou alguma da biblioteca.
-    if (song && matchScore(file.name, song) >= 0.6) return attach(song, p)
-    const guess = song ? null : guessSong(file.name, library)
+    pickSongFor(p)
+  }
+
+  // Pelo nome do arquivo: a música aberta, ou alguma da biblioteca; senão, pergunta.
+  const pickSongFor = (p: Pending) => {
+    if (song && matchScore(p.file.name, song) >= 0.6) return attach(song, p)
+    const guess = song ? null : guessSong(p.file.name, library)
     if (guess) return attach(guess, p)
-    setPending(p) // não deu para saber: pergunta
+    setPending(p)
   }
 
   const fromDownloads = async () => {
     try {
-      const f = await latestMidiFromDownloads()
+      const f = await latestFromDownloads()
       if (f) await importFile(f)
-      else setMessage({ kind: 'error', text: 'Não achei nenhum arquivo .mid nessa pasta.' })
+      else setMessage({ kind: 'error', text: 'Não achei nenhum MIDI (.mid) nem tablatura (.gp, .musicxml) nessa pasta.' })
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return
       setMessage({ kind: 'error', text: 'Não consegui abrir a pasta. Use "Escolher arquivo".' })
@@ -319,7 +341,7 @@ export function MusikPlayer({ active }: { active: boolean }) {
         )}
       </section>
 
-      {/* A qual música pertence o MIDI? */}
+      {/* A qual música pertence o arquivo (MIDI ou tablatura)? */}
       {pending && (
         <section className="rounded-2xl border border-accent-2/60 bg-panel/90 p-3 backdrop-blur sm:p-6" role="dialog" aria-label="Escolher a música do MIDI">
           <p className="mb-2 text-sm">
@@ -406,7 +428,7 @@ export function MusikPlayer({ active }: { active: boolean }) {
               </a>
               {canPickFolder() && (
                 <button onClick={() => void fromDownloads()} className="btn btn-round px-4">
-                  ⬇ Pegar último MIDI da pasta Downloads
+                  ⬇ Pegar último arquivo da pasta Downloads
                 </button>
               )}
               <button onClick={() => fileInput.current?.click()} className="btn btn-round px-4">
@@ -415,7 +437,7 @@ export function MusikPlayer({ active }: { active: boolean }) {
               <input
                 ref={fileInput}
                 type="file"
-                accept=".mid,.midi,audio/midi,audio/x-midi"
+                accept=".mid,.midi,audio/midi,audio/x-midi,.gp,.gp3,.gp4,.gp5,.gpx,.musicxml,.mxl"
                 hidden
                 onChange={(e) => {
                   const f = e.target.files?.[0]
@@ -445,6 +467,35 @@ export function MusikPlayer({ active }: { active: boolean }) {
                 return null
               }}
             />
+          </section>
+
+          {/* Tablatura/partitura dos trechos INTRO, SOLO e FINAL */}
+          <section className="rounded-2xl border border-line bg-panel/80 p-3 backdrop-blur sm:p-6">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-display text-lg font-bold">Tablatura (riff e solo)</h3>
+              <span className={`text-xs ${song.tab ? 'text-emerald-300' : 'text-slate-400'}`}>{song.tab ? `✔ ${song.tab.name}` : 'nenhuma ainda'}</span>
+            </div>
+            {song.tab ? (
+              <Suspense fallback={<p className="text-sm text-slate-400">Abrindo a tablatura…</p>}>
+                <TabSettings tab={song.tab} sheet={sheet} onChange={(tab) => update({ tab })} />
+              </Suspense>
+            ) : (
+              <>
+                <p className="text-sm text-slate-300">
+                  Traga um arquivo <strong>Guitar Pro</strong> (.gp, .gp5, .gpx) ou <strong>MusicXML</strong> da música, de um site onde você tenha
+                  direito de baixar. Pelo mesmo caminho do MIDI: Compartilhar → Acordes, pasta Downloads, arrastar ou "Escolher arquivo". O app
+                  escolhe a faixa da guitarra e encaixa a tablatura nos trechos INTRO, SOLO e FINAL sozinho.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <a href={searchUrl.ultimateGuitar(q)} target="_blank" rel="noopener noreferrer" className="btn btn-round px-3 py-1.5 text-xs">
+                    Procurar no Ultimate Guitar ↗
+                  </a>
+                  <button onClick={() => fileInput.current?.click()} className="btn btn-round px-3 py-1.5 text-xs">
+                    Escolher arquivo
+                  </button>
+                </div>
+              </>
+            )}
           </section>
 
           <TempoPanel song={song} sheet={sheet} player={player} hasVideo={available.youtube} onChange={update} />

@@ -23,14 +23,16 @@ const DIR_KEY = 'pasta-downloads'
 const SHARE_CACHE = 'acordes-compartilhados'
 
 export const isMidiName = (name: string) => /\.(mid|midi|kar)$/i.test(name)
+/** Tablatura/partitura que o alphaTab lê: Guitar Pro e MusicXML. */
+export const isTabName = (name: string) => /\.(gp|gp3|gp4|gp5|gpx|musicxml|mxl)$/i.test(name)
 export const canPickFolder = () => typeof (window as PickerWindow).showDirectoryPicker === 'function'
 
 /**
- * O arquivo MIDI mais recente da pasta Downloads. Na primeira vez o
- * navegador pergunta qual pasta (já abre em Downloads); depois lembra.
- * Precisa ser chamado dentro de um clique.
+ * O arquivo mais recente da pasta Downloads que seja MIDI de acordes ou
+ * tablatura. Na primeira vez o navegador pergunta qual pasta (já abre em
+ * Downloads); depois lembra. Precisa ser chamado dentro de um clique.
  */
-export async function latestMidiFromDownloads(): Promise<File | null> {
+export async function latestFromDownloads(): Promise<File | null> {
   const w = window as PickerWindow
   let dir = await kvGet<DirHandle>(DIR_KEY).catch(() => undefined)
   if (dir) {
@@ -44,7 +46,7 @@ export async function latestMidiFromDownloads(): Promise<File | null> {
   }
   let best: File | null = null
   for await (const entry of dir.values()) {
-    if (entry.kind !== 'file' || !isMidiName(entry.name) || !entry.getFile) continue
+    if (entry.kind !== 'file' || !(isMidiName(entry.name) || isTabName(entry.name)) || !entry.getFile) continue
     const f = await entry.getFile()
     if (!best || f.lastModified > best.lastModified) best = f
   }

@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { playShapeWithPrefs } from '../lib/audio'
 import { QUALITIES } from '../lib/chords'
-import { chordAt, nextChord, prevChord, type Measure, type MeasureChord, type Section, type Sheet, type Song } from '../lib/song'
+import { chordAt, nextChord, prevChord, type Measure, type MeasureChord, type Section, type Sheet, type Song, type SongTab } from '../lib/song'
 import type { PlayPos } from '../lib/songPlayer'
 import { shapeForSongChord, songChordName, toChordRef, type SongChord } from '../lib/songChords'
 import { useStoredState } from '../lib/storage'
@@ -23,6 +23,9 @@ interface Props {
   onShiftDownbeat: (delta: number) => void
   onSeek?: (measure: number) => void
 }
+
+// A tablatura usa o alphaTab (grande): só é baixada quando a música tem uma.
+const TabView = lazy(() => import('./TabView'))
 
 type ViewMode = 'blocos' | 'corrida' | 'rolagem'
 const VIEWS: { v: ViewMode; label: string }[] = [
@@ -117,7 +120,21 @@ export function SongSheet({ song, sheet, now, onEditMeasure, onShiftDownbeat, on
       </div>
 
       {view === 'rolagem' ? (
-        <ScrollStrip sheet={sheet} now={now} editing={editing} selected={selected} onSelect={select} />
+        <>
+          <ScrollStrip sheet={sheet} now={now} editing={editing} selected={selected} onSelect={select} />
+          {/* Tocando um trecho sem letra: a tablatura dele aparece embaixo da faixa. */}
+          {song.tab && now && (() => {
+            const sec = sheet.sections.find((s) => !s.lines.length && s.measures.some((m) => m.index === now.measure))
+            return sec ? (
+              <section className="rounded-2xl border border-line bg-panel/60 p-2 sm:p-3">
+                <h4 className="font-display text-sm font-bold tracking-wider text-accent-2 uppercase">{sec.label}</h4>
+                <Suspense fallback={null}>
+                  <TabView tab={song.tab} sheet={sheet} section={sec} now={now} />
+                </Suspense>
+              </section>
+            ) : null
+          })()}
+        </>
       ) : (
         <div className="flex flex-col gap-5">
           {sheet.sections.map((sec, i) => (
@@ -126,6 +143,8 @@ export function SongSheet({ song, sheet, now, onEditMeasure, onShiftDownbeat, on
               section={sec}
               beatsPerBar={sheet.beatsPerBar}
               flow={view === 'corrida'}
+              tab={song.tab}
+              sheet={sheet}
               now={now}
               editing={editing}
               selected={selected}
@@ -256,13 +275,15 @@ interface SectionProps {
   section: Section
   beatsPerBar: number
   flow: boolean
+  tab?: SongTab
+  sheet: Sheet
   now?: PlayPos | null
   editing: boolean
   selected: number | null
   onSelect: (i: number) => void
 }
 
-function SectionView({ section, beatsPerBar, flow, now, editing, selected, onSelect }: SectionProps) {
+function SectionView({ section, beatsPerBar, flow, tab, sheet, now, editing, selected, onSelect }: SectionProps) {
   const active = !!now && (section.lines.length ? section.lines.some((l) => l.measures.some((m) => m.index === now.measure)) : section.measures.some((m) => m.index === now.measure))
   return (
     <section>
@@ -270,8 +291,15 @@ function SectionView({ section, beatsPerBar, flow, now, editing, selected, onSel
         {section.label}
       </h4>
       {section.lines.length === 0 ? (
-        // INTRO / SOLO / FINAL: por enquanto só o aviso (conteúdo virá depois).
-        <InstrumentalBadge section={section} active={active} />
+        // INTRO / SOLO / FINAL: o aviso e, se houver arquivo, a tablatura do trecho.
+        <>
+          <InstrumentalBadge section={section} active={active} />
+          {tab && (
+            <Suspense fallback={<p className="mt-2 text-xs text-slate-500">Abrindo a tablatura…</p>}>
+              <TabView tab={tab} sheet={sheet} section={section} now={now} />
+            </Suspense>
+          )}
+        </>
       ) : (
         <div className="flex flex-col gap-2">
           {section.lines.map((line, i) =>

@@ -35,7 +35,13 @@ export default defineConfig({
             files: [
               {
                 name: 'arquivo',
-                accept: ['audio/midi', 'audio/mid', 'audio/x-midi', 'application/x-midi', '.mid', '.midi', 'audio/*'],
+                // MIDI do Chordify, tablaturas (Guitar Pro, MusicXML) e áudio. Guitar Pro costuma
+                // chegar como "application/octet-stream"; o app confere pela extensão.
+                accept: [
+                  'audio/midi', 'audio/mid', 'audio/x-midi', 'application/x-midi', '.mid', '.midi', 'audio/*',
+                  'application/x-guitar-pro', 'application/octet-stream', '.gp', '.gp3', '.gp4', '.gp5', '.gpx',
+                  'application/vnd.recordare.musicxml', 'application/vnd.recordare.musicxml+xml', '.musicxml', '.mxl',
+                ],
               },
             ],
           },
@@ -45,7 +51,8 @@ export default defineConfig({
         importScripts: ['compartilhar-sw.js'],
         // Guarda TUDO (inclusive a parte 3D e o som, que é sintetizado) para
         // o app funcionar sem internet. As fontes não-latinas ficam de fora.
-        globPatterns: ['**/*.{js,css,html,svg,png,ico}', '**/*latin*.woff2'],
+        // Inclui a fonte de partitura do alphaTab (Bravura, licença SIL OFL) para a tablatura abrir offline.
+        globPatterns: ['**/*.{js,css,html,svg,png,ico}', '**/*latin*.woff2', 'alphatab/font/*.woff2'],
         globIgnores: ['**/*cyrillic*', '**/*greek*', '**/*vietnamese*'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
       },
