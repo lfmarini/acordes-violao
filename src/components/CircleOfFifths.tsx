@@ -71,7 +71,7 @@ export function CircleOfFifths({ chord, mode, onPick }: Props) {
     dist(p) === 0 && ((ring === 'out' && mode === 'major') || (ring === 'in' && mode === 'minor'))
 
   return (
-    <section className="rounded-2xl border border-line bg-panel/80 p-4 backdrop-blur sm:p-5">
+    <section className="min-w-0 rounded-2xl border border-line bg-panel/80 p-3 backdrop-blur sm:p-5">
       <h2 className="font-display text-xl font-bold">Círculo de quintas</h2>
       <p className="mb-2 text-sm text-slate-400">
         Tom de {info.tonic} {mode === 'major' ? 'maior' : 'menor'} destacado, com os vizinhos do campo harmônico.

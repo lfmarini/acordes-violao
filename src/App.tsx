@@ -126,7 +126,7 @@ export default function App() {
           <Background3D />
         </Suspense>
       )}
-      <div className="mx-auto flex min-h-dvh max-w-6xl flex-col gap-5 px-4 pt-5 pb-10 sm:px-6">
+      <div className="mx-auto flex min-h-dvh w-full max-w-6xl min-w-0 flex-col gap-5 px-2 pt-5 pb-10 sm:px-6">
         <header className="flex items-end justify-between gap-3">
           <div>
             <h1 className="font-display text-2xl font-bold tracking-tight sm:text-3xl">

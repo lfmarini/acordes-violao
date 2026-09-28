@@ -14,7 +14,7 @@ interface Props {
 // no braço; passar o mouse (ou tocar) numa linha destaca a nota no braço.
 export function TheoryPanel({ chord, analysis, highlight, onHighlight }: Props) {
   return (
-    <aside className="rounded-2xl border border-line bg-panel/80 p-4 backdrop-blur sm:p-5">
+    <aside className="min-w-0 rounded-2xl border border-line bg-panel/80 p-3 backdrop-blur sm:p-5">
       <h2 className="font-display text-xl font-bold">
         Teoria de <span className="text-accent-2">{chordDisplayName(chord)}</span>
       </h2>

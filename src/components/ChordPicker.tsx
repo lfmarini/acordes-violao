@@ -137,7 +137,7 @@ export function ChordPicker({ chord, onChange }: Props) {
       </div>
 
       {/* ...depois a qualidade */}
-      <div className="scroll-thin -mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
+      <div className="scroll-thin -mx-2 flex gap-1.5 overflow-x-auto px-2 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
         {QUALITIES.map((q) => {
           const active = q.id === chord.quality.id
           return (

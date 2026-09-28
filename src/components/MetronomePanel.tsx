@@ -83,7 +83,7 @@ export function MetronomePanel({ onBeat, active }: Props) {
   })
 
   return (
-    <section className="rounded-2xl border border-line bg-panel/80 p-4 backdrop-blur sm:p-6">
+    <section className="min-w-0 rounded-2xl border border-line bg-panel/80 p-3 backdrop-blur sm:p-6">
       <div className="mb-4 flex items-baseline justify-between">
         <h2 className="font-display text-xl font-bold">Metrônomo</h2>
         <span className="text-sm text-slate-400">{tempoName(bpm)}</span>

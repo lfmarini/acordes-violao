@@ -18,7 +18,7 @@ export function Learning({ active, onPick }: { active: boolean; onPick: (c: Chor
   }, [])
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[400px_minmax(0,1fr)]">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:gap-6 lg:grid-cols-[400px_minmax(0,1fr)]">
       <MetronomePanel onBeat={onBeat} active={active} />
       <AmplitudeChart beats={beats} active={active} onPick={onPick} />
     </div>

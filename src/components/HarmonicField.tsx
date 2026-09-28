@@ -13,7 +13,7 @@ export function HarmonicField({ chord, mode, onMode, onPick }: Props) {
   const field = harmonicField(chord.root, mode)
   const info = keyInfo(chord.root, mode)
   return (
-    <section className="rounded-2xl border border-line bg-panel/80 p-4 backdrop-blur sm:p-5">
+    <section className="min-w-0 rounded-2xl border border-line bg-panel/80 p-3 backdrop-blur sm:p-5">
       <div className="mb-1 flex items-center justify-between gap-2">
         <h2 className="font-display text-xl font-bold">Campo harmônico</h2>
         <div className="flex rounded-full border border-line p-0.5 text-xs" role="group" aria-label="Tonalidade">
