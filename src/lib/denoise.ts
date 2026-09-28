@@ -1,0 +1,143 @@
+// ---------------------------------------------------------------------------
+// Redução de ruído do microfone (fraca / média / forte).
+//
+// O navegador tem um "noise suppression" próprio, mas ele é feito para voz e
+// costuma cortar o som sustentado do violão. Por isso fazemos o nosso:
+//
+// 1. O som é cortado em janelas curtas (21 ms) e passa pela FFT, que separa
+//    cada janela em faixas de frequência.
+// 2. Em cada faixa, estimamos o "chão" de ruído: o nível mais baixo que a
+//    faixa atingiu recentemente (ventilador, chiado, zumbido de geladeira
+//    ficam sempre lá; as notas vêm e vão). Esse chão sobe devagar, para
+//    acompanhar mudanças no ambiente sem confundir nota longa com ruído.
+// 3. Cada faixa é atenuada conforme o quanto ela está acima do ruído
+//    (subtração espectral). Quanto mais forte o nível escolhido, mais ruído
+//    sai — e mais risco de "comer" um pouco do som fraco do violão.
+// 4. As janelas são remontadas (FFT inversa + sobreposição) e seguem para o
+//    gráfico, a identificação de acordes e a gravação.
+// ---------------------------------------------------------------------------
+
+export type NoiseLevel = 'off' | 'fraca' | 'media' | 'forte'
+
+export const NOISE_LEVELS: { id: NoiseLevel; label: string }[] = [
+  { id: 'off', label: 'Desligada' },
+  { id: 'fraca', label: 'Fraca' },
+  { id: 'media', label: 'Média' },
+  { id: 'forte', label: 'Forte' },
+]
+
+// alpha: quanto do ruído estimado é subtraído; floor: quanto sobra, no mínimo,
+// de cada faixa (evita o som "aquático" típico de supressão exagerada).
+export const NOISE_PARAMS: Record<Exclude<NoiseLevel, 'off'>, { alpha: number; floor: number }> = {
+  fraca: { alpha: 1.5, floor: 0.35 },
+  media: { alpha: 3, floor: 0.16 },
+  forte: { alpha: 6, floor: 0.06 },
+}
+
+// Código do processador. Fica numa string porque roda no "AudioWorklet",
+// um ambiente separado do resto do app. Também é usado pelo teste em Node.
+export const DENOISE_WORKLET = `
+const N = 1024, H = 256, HALF = N / 2
+const RISE = 1.0015 // quanto o chão de ruído sobe por janela (~+1,3 dB/s)
+const BIAS = 3 // o mínimo fica abaixo da média do ruído; compensamos
+
+class Denoiser extends AudioWorkletProcessor {
+  constructor() {
+    super()
+    this.alpha = 0; this.floor = 1; this.on = false
+    this.win = new Float32Array(N)
+    for (let i = 0; i < N; i++) this.win[i] = Math.sqrt(0.5 - 0.5 * Math.cos((2 * Math.PI * i) / N))
+    this.inBuf = new Float32Array(N); this.fresh = new Float32Array(H); this.fill = 0
+    this.acc = new Float32Array(N)
+    this.queue = new Float32Array(N * 4); this.qr = 0; this.qw = 0; this.qn = 0
+    this.re = new Float32Array(N); this.im = new Float32Array(N)
+    this.pow = new Float32Array(HALF + 1); this.noise = new Float32Array(HALF + 1); this.gain = new Float32Array(HALF + 1).fill(1)
+    this.frames = 0
+    // Tabelas da FFT
+    this.rev = new Uint32Array(N)
+    for (let i = 0, j = 0; i < N; i++) { this.rev[i] = j; let bit = N >> 1; while (j & bit) { j ^= bit; bit >>= 1 } j |= bit }
+    this.cos = new Float32Array(HALF); this.sin = new Float32Array(HALF)
+    for (let k = 0; k < HALF; k++) { this.cos[k] = Math.cos((2 * Math.PI * k) / N); this.sin[k] = -Math.sin((2 * Math.PI * k) / N) }
+    this.port.onmessage = (e) => this.setLevel(e.data)
+  }
+
+  setLevel(p) {
+    this.on = !!p && p.alpha > 0
+    if (this.on) { this.alpha = p.alpha; this.floor = p.floor }
+  }
+
+  fft(re, im, inverse) {
+    const rev = this.rev
+    for (let i = 0; i < N; i++) { const j = rev[i]; if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t } }
+    for (let size = 2; size <= N; size <<= 1) {
+      const half = size >> 1, step = N / size
+      for (let i = 0; i < N; i += size) {
+        for (let k = 0; k < half; k++) {
+          const wr = this.cos[k * step], wi = inverse ? -this.sin[k * step] : this.sin[k * step]
+          const a = i + k, b = a + half
+          const tr = re[b] * wr - im[b] * wi, ti = re[b] * wi + im[b] * wr
+          re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti
+        }
+      }
+    }
+  }
+
+  frame() {
+    const { re, im, win } = this
+    for (let i = 0; i < N; i++) { re[i] = this.inBuf[i] * win[i]; im[i] = 0 }
+    this.fft(re, im, false)
+    const first = this.frames++ < 8
+    for (let k = 0; k <= HALF; k++) {
+      const p = re[k] * re[k] + im[k] * im[k]
+      this.pow[k] = first ? p : 0.8 * this.pow[k] + 0.2 * p
+      // Chão de ruído: segue o mínimo e sobe devagar.
+      if (first) this.noise[k] = this.pow[k]
+      else if (this.pow[k] < this.noise[k]) this.noise[k] = this.pow[k]
+      else this.noise[k] = this.noise[k] * RISE + 1e-12
+      let g = 1
+      if (this.on) g = Math.max(this.floor, 1 - (this.alpha * BIAS * this.noise[k]) / Math.max(p, 1e-12))
+      // Sobe rápido (não corta o ataque da nota) e desce devagar (menos "chiado metálico").
+      this.gain[k] = g > this.gain[k] ? g : 0.65 * this.gain[k] + 0.35 * g
+      const gk = this.gain[k]
+      re[k] *= gk; im[k] *= gk
+      if (k > 0 && k < HALF) { re[N - k] = re[k]; im[N - k] = -im[k] }
+    }
+    this.fft(re, im, true)
+    // Janela de síntese; com 75% de sobreposição a soma das janelas dá 2.
+    for (let i = 0; i < N; i++) this.acc[i] += (re[i] / N) * win[i] * 0.5
+    for (let i = 0; i < H; i++) { this.queue[this.qw] = this.acc[i]; this.qw = (this.qw + 1) % this.queue.length; this.qn++ }
+    this.acc.copyWithin(0, H); this.acc.fill(0, N - H)
+  }
+
+  process(inputs, outputs) {
+    const input = inputs[0] && inputs[0][0]
+    const out = outputs[0] && outputs[0][0]
+    if (!out) return true
+    for (let i = 0; i < out.length; i++) {
+      this.fresh[this.fill++] = input ? input[i] : 0
+      if (this.fill === H) {
+        this.inBuf.copyWithin(0, H); this.inBuf.set(this.fresh, N - H); this.fill = 0
+        this.frame()
+      }
+      if (this.qn > 0) { out[i] = this.queue[this.qr]; this.qr = (this.qr + 1) % this.queue.length; this.qn-- }
+      else out[i] = 0
+    }
+    return true
+  }
+}
+registerProcessor('denoiser', Denoiser)
+`
+
+export async function createDenoiser(ctx: AudioContext) {
+  const url = URL.createObjectURL(new Blob([DENOISE_WORKLET], { type: 'application/javascript' }))
+  try {
+    await ctx.audioWorklet.addModule(url)
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+  return new AudioWorkletNode(ctx, 'denoiser', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] })
+}
+
+export function setNoiseLevel(node: AudioWorkletNode, level: NoiseLevel) {
+  node.port.postMessage(level === 'off' ? null : NOISE_PARAMS[level])
+}

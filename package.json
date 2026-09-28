@@ -11,7 +11,8 @@
     "testar": "tsx scripts/testar-acordes.ts",
     "icones": "node scripts/gerar-icones.mjs",
     "afinacao": "tsx scripts/testar-afinacao.ts",
-    "reconhecimento": "tsx scripts/testar-reconhecimento.ts"
+    "reconhecimento": "tsx scripts/testar-reconhecimento.ts",
+    "ruido": "tsx scripts/testar-ruido.ts"
   },
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7",
