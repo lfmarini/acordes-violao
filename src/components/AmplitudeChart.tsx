@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { chordDisplayName, type ChordRef } from '../lib/chords'
 import { LiveDetector, liveLabel, type LiveResult } from '../lib/liveDetect'
 import { analyzeSpectrum } from '../lib/recognize'
-import { MAX_RECORD_MIN, Recorder, downloadBlob } from '../lib/recorder'
+import { MAX_RECORD_MIN, MP3_KBPS, Recorder, downloadBlob } from '../lib/recorder'
+import { useStoredState } from '../lib/storage'
 
 // ---------------------------------------------------------------------------
 // Gráfico da amplitude sonora ao longo do tempo, captada pelo microfone.
@@ -45,11 +46,25 @@ const SAVE_OPTIONS = [
 
 const fmtTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
 
-function fileName(seconds: number | null) {
+type Format = 'mp3' | 'wav'
+
+// MP3 é o padrão: ~6x menor e toca em qualquer aparelho. WAV guarda o som sem perda.
+const FORMATS: { id: Format; label: string; hint: string }[] = [
+  { id: 'mp3', label: 'MP3', hint: 'menor, toca em qualquer aparelho' },
+  { id: 'wav', label: 'WAV', hint: 'sem perda, ~6x maior' },
+]
+
+// Tamanho aproximado do arquivo (mono): MP3 pelo bitrate; WAV = 2 bytes por amostra.
+function sizeLabel(seconds: number, format: Format, sampleRate = 48000) {
+  const bytes = format === 'mp3' ? (seconds * MP3_KBPS * 1000) / 8 : seconds * sampleRate * 2 + 44
+  return bytes >= 1e6 ? `${(bytes / 1e6).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(bytes / 1e3))} KB`
+}
+
+function fileName(seconds: number | null, format: Format) {
   const d = new Date()
   const pad = (n: number) => String(n).padStart(2, '0')
   const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}h${pad(d.getMinutes())}`
-  return `acordes-gravacao_${stamp}_${seconds ? `${seconds}s` : 'inteira'}.wav`
+  return `acordes-gravacao_${stamp}_${seconds ? `${seconds}s` : 'inteira'}.${format}`
 }
 
 const toDb = (rms: number) => Math.max(DB_FLOOR, 20 * Math.log10(Math.max(rms, 1e-6)))
@@ -82,6 +97,27 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
   const [recorded, setRecorded] = useState(0) // segundos gravados
   const [live, setLive] = useState<LiveResult>({ kind: 'silence' })
   const [history, setHistory] = useState<string[]>([])
+  const [format, setFormat] = useStoredState<Format>('formato-gravacao', 'mp3')
+  const [saving, setSaving] = useState<{ label: string; progress: number } | null>(null)
+
+  const save = async (o: (typeof SAVE_OPTIONS)[number]) => {
+    const rec = recorder.current
+    if (!rec) return
+    const seconds = o.seconds ?? undefined
+    if (format === 'wav') {
+      downloadBlob(rec.toWav(seconds), fileName(o.seconds, 'wav'))
+      return
+    }
+    setSaving({ label: o.label, progress: 0 })
+    try {
+      const blob = await rec.toMp3(seconds, (progress) => setSaving({ label: o.label, progress }))
+      downloadBlob(blob, fileName(o.seconds, 'mp3'))
+    } catch {
+      setError('Não consegui converter para MP3. Tente salvar em WAV.')
+    } finally {
+      setSaving(null)
+    }
+  }
 
   const draw = useCallback(() => {
     const now = performance.now()
@@ -339,32 +375,44 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
       )}
       {error && <p className="mt-2 text-sm text-rose-300">{error}</p>}
 
-      {/* Salvar a gravação como arquivo .wav no aparelho */}
+      {/* Salvar a gravação no aparelho, em MP3 (pequeno) ou WAV (sem perda) */}
       <div className="mt-4 rounded-xl border border-line bg-black/20 p-3">
-        <div className="mb-2 flex items-center justify-between text-sm">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm">
           <span className="font-semibold text-slate-200">Salvar gravação</span>
           <span className="flex items-center gap-2 tabular-nums text-slate-400">
             {on && <span className="h-2 w-2 animate-pulse rounded-full bg-rose-500" aria-hidden />}
             {recorded > 0 ? `${fmtTime(recorded)} gravados` : 'nada gravado ainda'}
           </span>
         </div>
+        <div className="mb-2 flex items-center gap-2 text-xs text-slate-400" role="group" aria-label="Formato do arquivo">
+          Formato:
+          {FORMATS.map((f) => (
+            <button
+              key={f.id}
+              onClick={() => setFormat(f.id)}
+              aria-pressed={format === f.id}
+              className={`btn btn-round px-3 py-1 text-xs ${format === f.id ? 'btn-primary' : ''}`}
+            >
+              {f.label}
+            </button>
+          ))}
+          <span className="text-slate-500">{FORMATS.find((f) => f.id === format)!.hint}</span>
+        </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {SAVE_OPTIONS.map((o) => {
+            const secs = o.seconds ?? recorded
             const enough = o.seconds === null ? recorded > 0 : recorded >= o.seconds
+            const busyHere = saving?.label === o.label
             return (
-              <button
-                key={o.label}
-                disabled={!enough}
-                onClick={() => recorder.current && downloadBlob(recorder.current.toWav(o.seconds ?? undefined), fileName(o.seconds))}
-                className="btn px-3"
-              >
-                {o.label}
+              <button key={o.label} disabled={!enough || !!saving} onClick={() => void save(o)} className="btn flex-col gap-0 px-3 leading-tight">
+                <span>{busyHere ? `Convertendo… ${Math.round(saving.progress * 100)}%` : o.label}</span>
+                {enough && !busyHere && <span className="text-[10px] font-normal text-slate-400">≈ {sizeLabel(secs, format)}</span>}
               </button>
             )
           })}
         </div>
         <p className="mt-2 text-xs text-slate-500">
-          O arquivo .wav vai para a pasta de downloads. Dá para salvar com o microfone ligado ou depois de parar. A gravação fica só na
+          O arquivo vai para a pasta de downloads. Dá para salvar com o microfone ligado ou depois de parar. A gravação fica só na
           memória desta página (até {MAX_RECORD_MIN} min) e some ao ligar o microfone de novo ou fechar o app.
         </p>
       </div>

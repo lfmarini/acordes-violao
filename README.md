@@ -41,7 +41,8 @@ e no computador.
   compasso de 1 a 8 tempos, "bater o tempo" e volume) e gráfico da amplitude
   sonora captada pelo microfone nos últimos 8 segundos, com as batidas do
   metrônomo marcadas para conferir se você está no tempo. Enquanto o microfone
-  está ligado o som é gravado, e dá para salvar um arquivo .wav com os últimos
+  está ligado o som é gravado, e dá para salvar um arquivo MP3 (padrão, ~1 MB
+  por minuto) ou WAV (sem perda, ~6x maior) com os últimos
   10 s, 30 s, 1 min ou a gravação inteira. Uma trilha pequena abaixo do gráfico
   mostra o último minuto. Com o microfone ligado, o quadro "Tocando agora"
   identifica a nota (com a afinação em cents) ou o acorde que está soando e
@@ -54,7 +55,8 @@ Vite, React, TypeScript, Tailwind CSS, [tonal](https://github.com/tonaljs/tonal)
 (teoria musical), [@tombatossals/chords-db](https://github.com/tombatossals/chords-db)
 (formas de acordes, licença MIT), tone.js (som sintetizado), framer-motion
 (animações), three.js com @react-three/fiber e drei (fundo animado) e
-vite-plugin-pwa (modo offline).
+vite-plugin-pwa (modo offline) e [lamejs](https://github.com/breezystack/lamejs)
+(conversão para MP3, licença LGPL).
 
 ## Onde mexer
 
@@ -68,7 +70,7 @@ vite-plugin-pwa (modo offline).
 | Campo harmônico | `src/lib/harmony.ts` |
 | Reconhecimento de acordes pelo som | `src/lib/recognize.ts` |
 | Metrônomo (limites de BPM, som do clique) | `src/lib/metronome.ts` |
-| Gravação e arquivo .wav | `src/lib/recorder.ts` |
+| Gravação, MP3/WAV e qualidade do MP3 (`MP3_KBPS`) | `src/lib/recorder.ts` |
 | Identificação ao vivo de nota/acorde | `src/lib/liveDetect.ts` |
 | Estilo dos botões (`.btn`) | `src/index.css` |
 | Gráfico de amplitude | `src/components/AmplitudeChart.tsx` |

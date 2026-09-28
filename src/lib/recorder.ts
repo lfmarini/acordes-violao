@@ -5,11 +5,14 @@
 // amostras do microfone e as manda para cá em blocos. Guardamos tudo em
 // 16 bits (a qualidade de CD), que ocupa metade da memória. Na hora de
 // salvar, montamos o arquivo WAV com o trecho pedido (últimos 10 s, 30 s,
-// 1 min ou tudo) e o navegador baixa o arquivo. Nada sai do aparelho.
+// 1 min ou tudo) em MP3 (pequeno) ou WAV (sem perda) e o navegador baixa
+// o arquivo. Nada sai do aparelho.
 // ---------------------------------------------------------------------------
 
 /** Limite da gravação guardada na memória, em minutos (depois disso, descarta o começo). */
 export const MAX_RECORD_MIN = 20
+/** Qualidade do MP3 (kbps). 128 é qualidade de rádio/streaming, ótima para estudo. */
+export const MP3_KBPS = 128
 
 const WORKLET = `
 class Capture extends AudioWorkletProcessor {
@@ -74,8 +77,8 @@ export class Recorder {
     while (this.length - this.chunks[0].length > max) this.length -= this.chunks.shift()!.length
   }
 
-  /** Monta um arquivo WAV com os últimos `seconds` segundos (ou tudo, se omitido). */
-  toWav(seconds?: number): Blob {
+  /** Os últimos `seconds` segundos gravados (ou tudo, se omitido), em 16 bits. */
+  slice(seconds?: number): Int16Array<ArrayBuffer> {
     const want = seconds ? Math.min(this.length, Math.round(seconds * this.sampleRate)) : this.length
     const data = new Int16Array(want)
     // Copia do fim para o começo, para pegar só o trecho final.
@@ -86,6 +89,36 @@ export class Recorder {
       data.set(c.subarray(c.length - take), pos - take)
       pos -= take
     }
+    return data
+  }
+
+  /**
+   * Arquivo MP3 com os últimos `seconds` segundos. Bem menor que o WAV
+   * (128 kbps ≈ 1 MB por minuto) e abre em qualquer celular ou computador.
+   * A conversão roda num worker; `onProgress` recebe de 0 a 1.
+   */
+  toMp3(seconds: number | undefined, onProgress?: (p: number) => void): Promise<Blob> {
+    const pcm = this.slice(seconds)
+    return new Promise((resolve, reject) => {
+      const worker = new Worker(new URL('./mp3.worker.ts', import.meta.url), { type: 'module' })
+      worker.onmessage = (e: MessageEvent<{ progress?: number; done?: boolean; parts?: Uint8Array[] }>) => {
+        if (e.data.progress !== undefined) onProgress?.(e.data.progress)
+        if (e.data.done) {
+          worker.terminate()
+          resolve(new Blob(e.data.parts as BlobPart[], { type: 'audio/mpeg' }))
+        }
+      }
+      worker.onerror = (err) => {
+        worker.terminate()
+        reject(err)
+      }
+      worker.postMessage({ pcm, sampleRate: this.sampleRate, kbps: MP3_KBPS }, [pcm.buffer])
+    })
+  }
+
+  /** Arquivo WAV (sem perda de qualidade, mas ~6x maior que o MP3). */
+  toWav(seconds?: number): Blob {
+    const data = this.slice(seconds)
     // Cabeçalho WAV (PCM, mono, 16 bits).
     const header = new DataView(new ArrayBuffer(44))
     const text = (o: number, s: string) => [...s].forEach((ch, i) => header.setUint8(o + i, ch.charCodeAt(0)))
