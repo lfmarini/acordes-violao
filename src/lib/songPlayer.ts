@@ -81,6 +81,7 @@ export class SongPlayer {
   private flat: { measure: number; beat: number }[] = []
   private scheduled = 0 // até onde já foi agendado (segundo da gravação ou batida)
   private ytAnchor = { t: 0, perf: 0 }
+  private pendingSeek: number | null = null // posição do vídeo a aplicar no próximo ▶
   private timer = 0
   private raf = 0
   private startTimer = 0
@@ -129,6 +130,9 @@ export class SongPlayer {
     if (this.opts.source !== 'youtube') return
     if (s === YT_STATE.PLAYING && this.state !== 'playing') {
       clearTimeout(this.startTimer)
+      // Tocou pelo botão do próprio vídeo: aplica a posição que estava guardada.
+      if (this.pendingSeek !== null) this.yt?.seekTo(this.pendingSeek, true)
+      this.pendingSeek = null
       this.state = 'playing'
       this.scheduled = this.songTime()
       this.loop()
@@ -146,8 +150,23 @@ export class SongPlayer {
     return 60 / (this.opts.bpm * this.opts.rate)
   }
 
+  /**
+   * Leva o vídeo a um ponto sem fazê-lo tocar. No YouTube, "seekTo" num vídeo
+   * que ainda não começou (ou já terminou) faz ele começar a tocar; só um vídeo
+   * pausado continua pausado. Então, nesses casos, guardamos a posição e ela
+   * vale quando você apertar ▶.
+   */
+  private ytSeek(t: number) {
+    const st = this.yt?.getPlayerState()
+    if (st === YT_STATE.PLAYING || st === YT_STATE.PAUSED || st === YT_STATE.BUFFERING) {
+      this.pendingSeek = null
+      this.yt?.seekTo(t, true)
+    } else this.pendingSeek = t
+  }
+
   /** Segundo da gravação agora. */
   songTime(): number {
+    if (this.opts.source === 'youtube' && this.state !== 'playing' && this.pendingSeek !== null) return this.pendingSeek
     if (this.opts.source === 'youtube' && this.yt) {
       const t = this.yt.getCurrentTime() ?? 0
       const now = performance.now()
@@ -205,6 +224,9 @@ export class SongPlayer {
       this.state = 'counting'
       this.onState('counting')
       this.startTimer = window.setTimeout(() => {
+        // Posição guardada enquanto o vídeo ainda não tinha começado (ver ytSeek).
+        if (this.pendingSeek !== null) this.yt?.seekTo(this.pendingSeek, true)
+        this.pendingSeek = null
         this.yt?.playVideo()
         // Alguns celulares só deixam o vídeo começar com um toque no próprio vídeo.
         this.startTimer = window.setTimeout(() => {
@@ -241,7 +263,7 @@ export class SongPlayer {
     this.state = 'stopped'
     this.t0 = this.sheet?.sections[0]?.start ?? 0
     this.b0 = 0
-    if (this.opts.source === 'youtube') this.yt?.seekTo(0, true)
+    if (this.opts.source === 'youtube') this.ytSeek(0)
     this.onState('stopped')
     this.last = ''
     this.onPos(null)
@@ -254,7 +276,7 @@ export class SongPlayer {
     const playing = this.state === 'playing'
     if (this.timeBased) {
       this.t0 = m.start
-      if (this.opts.source === 'youtube') this.yt?.seekTo(m.start, true)
+      if (this.opts.source === 'youtube') this.ytSeek(m.start)
     } else {
       const i = this.flat.findIndex((f) => f.measure >= index)
       this.b0 = i < 0 ? 0 : i
