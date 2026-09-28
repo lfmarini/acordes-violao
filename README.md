@@ -42,7 +42,10 @@ e no computador.
   sonora captada pelo microfone nos últimos 8 segundos, com as batidas do
   metrônomo marcadas para conferir se você está no tempo. Enquanto o microfone
   está ligado o som é gravado, e dá para salvar um arquivo .wav com os últimos
-  10 s, 30 s, 1 min ou a gravação inteira.
+  10 s, 30 s, 1 min ou a gravação inteira. Uma trilha pequena abaixo do gráfico
+  mostra o último minuto. Com o microfone ligado, o quadro "Tocando agora"
+  identifica a nota (com a afinação em cents) ou o acorde que está soando e
+  marca cada troca no gráfico.
 - **Favoritos** com estrela e lembrança do último acorde, tudo salvo no navegador.
 
 ## Tecnologias
@@ -66,6 +69,8 @@ vite-plugin-pwa (modo offline).
 | Reconhecimento de acordes pelo som | `src/lib/recognize.ts` |
 | Metrônomo (limites de BPM, som do clique) | `src/lib/metronome.ts` |
 | Gravação e arquivo .wav | `src/lib/recorder.ts` |
+| Identificação ao vivo de nota/acorde | `src/lib/liveDetect.ts` |
+| Estilo dos botões (`.btn`) | `src/index.css` |
 | Gráfico de amplitude | `src/components/AmplitudeChart.tsx` |
 | Desenho do braço | `src/components/Fretboard.tsx` |
 

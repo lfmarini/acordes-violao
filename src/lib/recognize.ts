@@ -26,6 +26,8 @@ export interface Frame {
   chroma: number[] // 12 posições, C = 0
   bass: number[] // idem, só para a nota mais grave
   energy: number
+  /** Notas (fundamentais) encontradas: frequência e força. */
+  fundamentals: { f: number; strength: number }[]
 }
 
 interface Peak {
@@ -44,7 +46,7 @@ export function analyzeSpectrum(mag: Float32Array, sampleRate: number, fftSize: 
   for (let k = k0; k <= k1; k++) max = Math.max(max, mag[k])
   const chroma = new Array(12).fill(0)
   const bass = new Array(12).fill(0)
-  if (max <= 0) return { chroma, bass, energy: 0 }
+  if (max <= 0) return { chroma, bass, energy: 0, fundamentals: [] }
 
   // Picos locais acima de 4% do maior.
   let peaks: Peak[] = []
@@ -91,7 +93,8 @@ export function analyzeSpectrum(mag: Float32Array, sampleRate: number, fftSize: 
     const pc = ((Math.round(69 + 12 * Math.log2(low.f / 440)) % 12) + 12) % 12
     bass[pc] += 1
   }
-  return { chroma, bass, energy }
+  const fundamentals = notes.map((p) => ({ f: p.f, strength: Math.sqrt(p.amp) * p.w }))
+  return { chroma, bass, energy, fundamentals }
 }
 
 // Qualidades que o reconhecedor considera (as mais comuns no violão).

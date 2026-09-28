@@ -351,7 +351,13 @@ export default function App() {
         </div>
 
         <div hidden={tab !== 'aprendizado'}>
-          <Learning active={tab === 'aprendizado'} />
+          <Learning
+            active={tab === 'aprendizado'}
+            onPick={(c) => {
+              changeChord(c)
+              setTab('acordes')
+            }}
+          />
         </div>
       </div>
     </MotionConfig>

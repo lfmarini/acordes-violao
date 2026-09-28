@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { chordDisplayName, type ChordRef } from '../lib/chords'
+import { LiveDetector, liveLabel, type LiveResult } from '../lib/liveDetect'
+import { analyzeSpectrum } from '../lib/recognize'
 import { MAX_RECORD_MIN, Recorder, downloadBlob } from '../lib/recorder'
 
 // ---------------------------------------------------------------------------
@@ -6,13 +9,20 @@ import { MAX_RECORD_MIN, Recorder, downloadBlob } from '../lib/recorder'
 // A amplitude é medida em dBFS: 0 dB é o máximo que o microfone registra e
 // os valores negativos são sons mais fracos (−60 dB é quase silêncio).
 // As batidas do metrônomo aparecem como linhas verticais, para você ver se
-// as batidas da mão direita caem no tempo.
+// as batidas da mão direita caem no tempo. Embaixo, uma trilha pequena mostra
+// o último minuto inteiro. Com o microfone ligado, o app também diz qual
+// nota ou acorde está soando e marca as trocas no gráfico.
 // ---------------------------------------------------------------------------
 
-/** Janela de tempo mostrada no gráfico, em segundos. */
+/** Janela de tempo do gráfico principal, em segundos. */
 const WINDOW_S = 8
+/** Janela da trilha de histórico, em segundos. */
+const HISTORY_S = 60
 const DB_FLOOR = -60
 const GRID_DB = [-12, -24, -36, -48]
+/** De quanto em quanto tempo (ms) a nota/acorde é recalculada. */
+const DETECT_MS = 120
+const DETECT_FFT = 16384
 
 export interface BeatMark {
   at: number // performance.now()
@@ -22,6 +32,7 @@ export interface BeatMark {
 interface Props {
   beats: React.RefObject<BeatMark[]>
   active: boolean
+  onPick: (c: ChordRef) => void
 }
 
 // Opções de salvar: segundos (null = a gravação inteira).
@@ -43,85 +54,129 @@ function fileName(seconds: number | null) {
 
 const toDb = (rms: number) => Math.max(DB_FLOOR, 20 * Math.log10(Math.max(rms, 1e-6)))
 
-export function AmplitudeChart({ beats, active }: Props) {
+// Ajusta o canvas à tela (nitidez em telas de alta densidade, limitada a 2x).
+function prepare(c: HTMLCanvasElement) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2)
+  const w = c.clientWidth
+  const h = c.clientHeight
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
+    c.width = Math.round(w * dpr)
+    c.height = Math.round(h * dpr)
+  }
+  const g = c.getContext('2d')!
+  g.setTransform(dpr, 0, 0, dpr, 0, 0)
+  g.clearRect(0, 0, w, h)
+  return { g, w, h }
+}
+
+export function AmplitudeChart({ beats, active, onPick }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null)
+  const track = useRef<HTMLCanvasElement>(null)
   const samples = useRef<{ t: number; db: number }[]>([])
+  const marks = useRef<{ t: number; label: string }[]>([]) // trocas de nota/acorde
   const stopRef = useRef<() => void>(() => {})
   const [on, setOn] = useState(false)
   const [error, setError] = useState('')
   const [level, setLevel] = useState({ now: DB_FLOOR, peak: DB_FLOOR })
   const recorder = useRef<Recorder | null>(null)
   const [recorded, setRecorded] = useState(0) // segundos gravados
+  const [live, setLive] = useState<LiveResult>({ kind: 'silence' })
+  const [history, setHistory] = useState<string[]>([])
 
   const draw = useCallback(() => {
-    const c = canvas.current
-    if (!c) return
-    const dpr = Math.min(window.devicePixelRatio || 1, 2)
-    const w = c.clientWidth
-    const h = c.clientHeight
-    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
-      c.width = Math.round(w * dpr)
-      c.height = Math.round(h * dpr)
-    }
-    const g = c.getContext('2d')!
-    g.setTransform(dpr, 0, 0, dpr, 0, 0)
-    g.clearRect(0, 0, w, h)
-
-    const left = 34
-    const plotW = w - left - 6
     const now = performance.now()
-    const x = (t: number) => left + plotW * (1 - (now - t) / (WINDOW_S * 1000))
-    const y = (db: number) => 6 + (h - 24) * (db / DB_FLOOR)
 
-    // Grade e escala em dB
-    g.font = '10px Inter Variable, sans-serif'
-    g.fillStyle = '#64748b'
-    g.strokeStyle = 'rgba(255,255,255,0.06)'
-    g.lineWidth = 1
-    for (const db of [0, ...GRID_DB, DB_FLOOR]) {
-      g.beginPath()
-      g.moveTo(left, y(db))
-      g.lineTo(w - 6, y(db))
-      g.stroke()
-      g.fillText(`${db}`, 2, y(db) + 3)
-    }
-    // Segundos no eixo de baixo
-    for (let s = 0; s <= WINDOW_S; s += 2) {
-      const xx = left + plotW * (1 - s / WINDOW_S)
-      g.fillText(s === 0 ? 'agora' : `-${s}s`, xx - (s === 0 ? 28 : 8), h - 4)
+    // ---- Gráfico principal (últimos 8 s) ----
+    if (canvas.current) {
+      const { g, w, h } = prepare(canvas.current)
+      const left = 34
+      const plotW = w - left - 6
+      const x = (t: number) => left + plotW * (1 - (now - t) / (WINDOW_S * 1000))
+      const y = (db: number) => 20 + (h - 38) * (db / DB_FLOOR)
+
+      g.font = '10px Inter Variable, sans-serif'
+      g.fillStyle = '#64748b'
+      g.strokeStyle = 'rgba(255,255,255,0.06)'
+      g.lineWidth = 1
+      for (const db of [0, ...GRID_DB, DB_FLOOR]) {
+        g.beginPath()
+        g.moveTo(left, y(db))
+        g.lineTo(w - 6, y(db))
+        g.stroke()
+        g.fillText(`${db}`, 2, y(db) + 3)
+      }
+      for (let s = 0; s <= WINDOW_S; s += 2) {
+        const xx = left + plotW * (1 - s / WINDOW_S)
+        g.fillText(s === 0 ? 'agora' : `-${s}s`, xx - (s === 0 ? 28 : 8), h - 4)
+      }
+
+      for (const b of beats.current ?? []) {
+        if (b.at > now || now - b.at > WINDOW_S * 1000) continue
+        g.strokeStyle = b.accent ? 'rgba(124,92,255,0.8)' : 'rgba(124,92,255,0.35)'
+        g.lineWidth = b.accent ? 2 : 1
+        g.beginPath()
+        g.moveTo(x(b.at), 20)
+        g.lineTo(x(b.at), h - 18)
+        g.stroke()
+      }
+
+      const pts = samples.current.filter((p) => now - p.t <= WINDOW_S * 1000)
+      if (pts.length > 1) {
+        const grad = g.createLinearGradient(0, y(0), 0, y(DB_FLOOR))
+        grad.addColorStop(0, 'rgba(255,92,108,0.9)')
+        grad.addColorStop(0.35, 'rgba(34,211,238,0.7)')
+        grad.addColorStop(1, 'rgba(34,211,238,0.05)')
+        g.beginPath()
+        g.moveTo(x(pts[0].t), y(DB_FLOOR))
+        for (const p of pts) g.lineTo(x(p.t), y(p.db))
+        g.lineTo(x(pts[pts.length - 1].t), y(DB_FLOOR))
+        g.closePath()
+        g.fillStyle = grad
+        g.fill()
+        g.beginPath()
+        pts.forEach((p, i) => (i ? g.lineTo(x(p.t), y(p.db)) : g.moveTo(x(p.t), y(p.db))))
+        g.strokeStyle = '#67e8f9'
+        g.lineWidth = 1.5
+        g.stroke()
+      }
+
+      // Nomes das notas/acordes identificados, no momento em que começaram.
+      g.font = '600 11px Space Grotesk Variable, sans-serif'
+      for (const m of marks.current) {
+        if (now - m.t > WINDOW_S * 1000) continue
+        const xx = x(m.t)
+        g.fillStyle = 'rgba(255,197,66,0.9)'
+        g.fillRect(xx, 4, 1.5, 12)
+        g.fillText(m.label, xx + 4, 14)
+      }
     }
 
-    // Batidas do metrônomo
-    for (const b of beats.current ?? []) {
-      if (b.at > now || now - b.at > WINDOW_S * 1000) continue
-      g.strokeStyle = b.accent ? 'rgba(124,92,255,0.8)' : 'rgba(124,92,255,0.35)'
-      g.lineWidth = b.accent ? 2 : 1
-      g.beginPath()
-      g.moveTo(x(b.at), 6)
-      g.lineTo(x(b.at), h - 18)
-      g.stroke()
-    }
-
-    // Curva da amplitude, preenchida com degradê
-    const pts = samples.current.filter((p) => now - p.t <= WINDOW_S * 1000)
-    samples.current = pts
-    if (pts.length > 1) {
-      const grad = g.createLinearGradient(0, y(0), 0, y(DB_FLOOR))
-      grad.addColorStop(0, 'rgba(255,92,108,0.9)')
-      grad.addColorStop(0.35, 'rgba(34,211,238,0.7)')
-      grad.addColorStop(1, 'rgba(34,211,238,0.05)')
-      g.beginPath()
-      g.moveTo(x(pts[0].t), y(DB_FLOOR))
-      for (const p of pts) g.lineTo(x(p.t), y(p.db))
-      g.lineTo(x(pts[pts.length - 1].t), y(DB_FLOOR))
-      g.closePath()
-      g.fillStyle = grad
-      g.fill()
-      g.beginPath()
-      pts.forEach((p, i) => (i ? g.lineTo(x(p.t), y(p.db)) : g.moveTo(x(p.t), y(p.db))))
-      g.strokeStyle = '#67e8f9'
-      g.lineWidth = 1.5
-      g.stroke()
+    // ---- Trilha de histórico (último 1 min) ----
+    if (track.current) {
+      const { g, w, h } = prepare(track.current)
+      const x = (t: number) => w * (1 - (now - t) / (HISTORY_S * 1000))
+      // Colunas: o maior volume de cada fatia de tempo.
+      const cols = Math.max(1, Math.floor(w / 3))
+      const slice = (HISTORY_S * 1000) / cols
+      const maxes = new Array(cols).fill(DB_FLOOR)
+      for (const p of samples.current) {
+        const k = Math.floor((p.t - (now - HISTORY_S * 1000)) / slice)
+        if (k >= 0 && k < cols) maxes[k] = Math.max(maxes[k], p.db)
+      }
+      g.fillStyle = '#22d3ee'
+      maxes.forEach((db, k) => {
+        const bh = (h - 4) * (1 - db / DB_FLOOR)
+        if (bh > 0.5) g.fillRect(k * (w / cols), h - 2 - bh, Math.max(1, w / cols - 1), bh)
+      })
+      // Trecho que aparece no gráfico grande.
+      const x0 = x(now - WINDOW_S * 1000)
+      g.fillStyle = 'rgba(124,92,255,0.18)'
+      g.fillRect(x0, 0, w - x0, h)
+      g.strokeStyle = 'rgba(124,92,255,0.8)'
+      g.lineWidth = 1
+      g.strokeRect(x0 + 0.5, 0.5, w - x0 - 1, h - 1)
+      g.fillStyle = 'rgba(255,197,66,0.9)'
+      for (const m of marks.current) if (now - m.t <= HISTORY_S * 1000) g.fillRect(x(m.t), 0, 1, 5)
     }
   }, [beats])
 
@@ -142,10 +197,15 @@ export function AmplitudeChart({ beats, active }: Props) {
       return
     }
     const ctx = new AudioContext()
-    const analyser = ctx.createAnalyser()
-    analyser.fftSize = 2048
     const source = ctx.createMediaStreamSource(stream)
+    const analyser = ctx.createAnalyser() // volume
+    analyser.fftSize = 2048
     source.connect(analyser)
+    const spectrum = ctx.createAnalyser() // notas (precisa de mais resolução)
+    spectrum.fftSize = DETECT_FFT
+    spectrum.smoothingTimeConstant = 0
+    source.connect(spectrum)
+
     // Grava tudo enquanto o microfone está ligado (uma nova gravação apaga a anterior).
     const rec = new Recorder()
     try {
@@ -155,10 +215,19 @@ export function AmplitudeChart({ beats, active }: Props) {
       recorder.current = null // sem gravação neste navegador; o gráfico segue funcionando
     }
     setRecorded(0)
+    samples.current = []
+    marks.current = []
+    setHistory([])
+
     const wave = new Float32Array(analyser.fftSize)
+    const dbSpec = new Float32Array(spectrum.frequencyBinCount)
+    const mag = new Float32Array(spectrum.frequencyBinCount)
+    const detector = new LiveDetector()
+    let lastLabel = ''
     let peak = DB_FLOOR
     let raf = 0
     let lastUi = 0
+    let lastDetect = 0
 
     const loop = () => {
       analyser.getFloatTimeDomainData(wave)
@@ -167,7 +236,27 @@ export function AmplitudeChart({ beats, active }: Props) {
       const db = toDb(Math.sqrt(s / wave.length))
       const t = performance.now()
       samples.current.push({ t, db })
+      while (samples.current.length && t - samples.current[0].t > HISTORY_S * 1000) samples.current.shift()
       peak = Math.max(peak - 0.05, db) // o pico desce devagar
+
+      if (t - lastDetect >= DETECT_MS) {
+        const dt = lastDetect ? (t - lastDetect) / 1000 : DETECT_MS / 1000
+        lastDetect = t
+        spectrum.getFloatFrequencyData(dbSpec)
+        for (let i = 0; i < dbSpec.length; i++) mag[i] = Math.pow(10, dbSpec[i] / 20)
+        const result = detector.update(analyzeSpectrum(mag, ctx.sampleRate, DETECT_FFT), db, dt)
+        const label = liveLabel(result)
+        if (label !== lastLabel) {
+          lastLabel = label
+          setLive(result)
+          if (label && result.kind !== 'notes') {
+            marks.current.push({ t, label })
+            while (marks.current.length && t - marks.current[0].t > HISTORY_S * 1000) marks.current.shift()
+            setHistory((h) => [label, ...h].slice(0, 12))
+          }
+        } else if (result.kind === 'note') setLive(result) // atualiza os cents
+      }
+
       if (t - lastUi > 150) {
         setLevel({ now: db, peak })
         setRecorded(recorder.current?.seconds ?? 0)
@@ -183,6 +272,7 @@ export function AmplitudeChart({ beats, active }: Props) {
       cancelAnimationFrame(raf)
       recorder.current?.detach()
       setRecorded(recorder.current?.seconds ?? 0)
+      setLive({ kind: 'silence' })
       stream.getTracks().forEach((tr) => tr.stop())
       void ctx.close()
       setOn(false)
@@ -198,10 +288,9 @@ export function AmplitudeChart({ beats, active }: Props) {
 
   // Redesenha a grade vazia quando o tamanho muda.
   useEffect(() => {
-    const c = canvas.current
-    if (!c) return
+    const els = [canvas.current, track.current].filter(Boolean) as HTMLCanvasElement[]
     const ro = new ResizeObserver(() => draw())
-    ro.observe(c)
+    els.forEach((el) => ro.observe(el))
     return () => ro.disconnect()
   }, [draw])
 
@@ -209,19 +298,27 @@ export function AmplitudeChart({ beats, active }: Props) {
     <section className="rounded-2xl border border-line bg-panel/80 p-4 backdrop-blur sm:p-6">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-display text-xl font-bold">Amplitude sonora</h2>
-        <button
-          onClick={() => (on ? stopRef.current() : void start())}
-          className={`rounded-full px-4 py-2 text-sm font-semibold transition active:scale-95 ${
-            on ? 'bg-rose-500/90 text-white' : 'bg-white/10 text-slate-100 hover:bg-white/15'
-          }`}
-        >
+        <button onClick={() => (on ? stopRef.current() : void start())} className={`btn btn-round ${on ? 'btn-danger' : 'btn-primary'}`}>
           {on ? '■ Parar microfone' : '● Ligar microfone'}
         </button>
       </div>
 
-      <canvas ref={canvas} className="h-56 w-full rounded-xl bg-black/30 sm:h-64" aria-label="Gráfico da amplitude sonora nos últimos 8 segundos" />
+      {/* O que está soando agora */}
+      <LiveReadout on={on} live={live} onPick={onPick} />
 
-      <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+      <canvas ref={canvas} className="mt-3 h-56 w-full rounded-xl bg-black/30 sm:h-64" aria-label="Gráfico da amplitude sonora nos últimos 8 segundos" />
+
+      {/* Trilha pequena: o último minuto, com o trecho do gráfico grande destacado */}
+      <div className="mt-2">
+        <canvas ref={track} className="h-10 w-full rounded-lg bg-black/30" aria-label="Histórico da amplitude no último minuto" />
+        <div className="mt-0.5 flex justify-between text-[10px] text-slate-500">
+          <span>-1 min</span>
+          <span>-30 s</span>
+          <span>agora</span>
+        </div>
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
         <span className="text-slate-400">
           Agora: <strong className="tabular-nums text-white">{on ? `${level.now.toFixed(0)} dB` : '—'}</strong>
         </span>
@@ -231,7 +328,15 @@ export function AmplitudeChart({ beats, active }: Props) {
         <span className="flex items-center gap-1.5 text-xs text-slate-500">
           <span className="inline-block h-3 w-0.5 bg-accent" /> batida do metrônomo
         </span>
+        <span className="flex items-center gap-1.5 text-xs text-slate-500">
+          <span className="inline-block h-3 w-0.5 bg-amber-300" /> nota/acorde identificado
+        </span>
       </div>
+      {history.length > 0 && (
+        <p className="mt-2 text-xs text-slate-400">
+          Sequência: <span className="font-display text-slate-200">{[...history].reverse().join(' → ')}</span>
+        </p>
+      )}
       {error && <p className="mt-2 text-sm text-rose-300">{error}</p>}
 
       {/* Salvar a gravação como arquivo .wav no aparelho */}
@@ -251,7 +356,7 @@ export function AmplitudeChart({ beats, active }: Props) {
                 key={o.label}
                 disabled={!enough}
                 onClick={() => recorder.current && downloadBlob(recorder.current.toWav(o.seconds ?? undefined), fileName(o.seconds))}
-                className="rounded-lg bg-white/5 px-3 py-2 text-sm text-slate-100 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-35"
+                className="btn px-3"
               >
                 {o.label}
               </button>
@@ -268,5 +373,52 @@ export function AmplitudeChart({ beats, active }: Props) {
         nas linhas roxas.
       </p>
     </section>
+  )
+}
+
+// Quadro "Tocando agora": nota (com afinação) ou acorde identificado.
+function LiveReadout({ on, live, onPick }: { on: boolean; live: LiveResult; onPick: (c: ChordRef) => void }) {
+  let main = '—'
+  let sub = on ? 'Toque uma nota ou um acorde…' : 'Ligue o microfone para identificar a nota ou o acorde tocado.'
+  let tune: number | null = null
+  if (live.kind === 'note') {
+    main = live.note
+    sub = `nota · ${live.hz.toFixed(1)} Hz`
+    tune = live.cents
+  } else if (live.kind === 'notes') {
+    main = live.notes.join(' + ')
+    sub = 'notas soando'
+  } else if (live.kind === 'chord') {
+    main = chordDisplayName(live.chord)
+    sub = `acorde · notas ${live.notes.join(' – ')} · ${Math.round(live.score * 100)}%`
+  }
+  return (
+    <div className="flex items-center gap-4 rounded-xl border border-line bg-black/25 px-4 py-3" aria-live="polite">
+      <div className="min-w-0 flex-1">
+        <div className="text-xs tracking-wide text-slate-500 uppercase">Tocando agora</div>
+        <div className="font-display text-4xl font-bold text-white">{main}</div>
+        <div className="truncate text-xs text-slate-400">{sub}</div>
+      </div>
+      {tune !== null && (
+        // Afinação: o ponteiro fica no meio quando a nota está afinada.
+        <div className="w-32 shrink-0 text-center">
+          <div className="relative h-2 rounded-full bg-white/10">
+            <span className="absolute top-0 left-1/2 h-2 w-0.5 -translate-x-1/2 bg-slate-400" />
+            <span
+              className={`absolute -top-1 h-4 w-1.5 -translate-x-1/2 rounded-full ${Math.abs(tune) <= 5 ? 'bg-emerald-400' : 'bg-amber-300'}`}
+              style={{ left: `${50 + Math.max(-50, Math.min(50, tune))}%` }}
+            />
+          </div>
+          <div className={`mt-1 text-xs tabular-nums ${Math.abs(tune) <= 5 ? 'text-emerald-300' : 'text-amber-200'}`}>
+            {Math.abs(tune) <= 5 ? 'afinada' : `${tune > 0 ? '+' : ''}${tune} cents`}
+          </div>
+        </div>
+      )}
+      {live.kind === 'chord' && (
+        <button onClick={() => onPick(live.chord)} className="btn shrink-0 px-3">
+          Ver no braço
+        </button>
+      )}
+    </div>
   )
 }
