@@ -28,10 +28,12 @@ export const NOISE_LEVELS: { id: NoiseLevel; label: string }[] = [
 
 // alpha: quanto do ruído estimado é subtraído; floor: quanto sobra, no mínimo,
 // de cada faixa (evita o som "aquático" típico de supressão exagerada).
-export const NOISE_PARAMS: Record<Exclude<NoiseLevel, 'off'>, { alpha: number; floor: number }> = {
-  fraca: { alpha: 1.5, floor: 0.35 },
-  media: { alpha: 3, floor: 0.16 },
-  forte: { alpha: 6, floor: 0.06 },
+// gate: no forte, quando só há ruído na janela (nenhuma nota tocando), ela é
+// abaixada inteira por esse fator — tira o "chiado residual" que sobra.
+export const NOISE_PARAMS: Record<Exclude<NoiseLevel, 'off'>, { alpha: number; floor: number; gate: number }> = {
+  fraca: { alpha: 1.5, floor: 0.35, gate: 1 },
+  media: { alpha: 3, floor: 0.16, gate: 1 },
+  forte: { alpha: 14, floor: 0.012, gate: 0.08 },
 }
 
 // Código do processador. Fica numa string porque roda no "AudioWorklet",
@@ -44,7 +46,7 @@ const BIAS = 3 // o mínimo fica abaixo da média do ruído; compensamos
 class Denoiser extends AudioWorkletProcessor {
   constructor() {
     super()
-    this.alpha = 0; this.floor = 1; this.on = false
+    this.alpha = 0; this.floor = 1; this.gate = 1; this.gateGain = 1; this.on = false
     this.win = new Float32Array(N)
     for (let i = 0; i < N; i++) this.win[i] = Math.sqrt(0.5 - 0.5 * Math.cos((2 * Math.PI * i) / N))
     this.inBuf = new Float32Array(N); this.fresh = new Float32Array(H); this.fill = 0
@@ -63,7 +65,7 @@ class Denoiser extends AudioWorkletProcessor {
 
   setLevel(p) {
     this.on = !!p && p.alpha > 0
-    if (this.on) { this.alpha = p.alpha; this.floor = p.floor }
+    if (this.on) { this.alpha = p.alpha; this.floor = p.floor; this.gate = p.gate }
   }
 
   fft(re, im, inverse) {
@@ -87,6 +89,7 @@ class Denoiser extends AudioWorkletProcessor {
     for (let i = 0; i < N; i++) { re[i] = this.inBuf[i] * win[i]; im[i] = 0 }
     this.fft(re, im, false)
     const first = this.frames++ < 8
+    let sumP = 0, sumN = 0
     for (let k = 0; k <= HALF; k++) {
       const p = re[k] * re[k] + im[k] * im[k]
       this.pow[k] = first ? p : 0.8 * this.pow[k] + 0.2 * p
@@ -94,12 +97,19 @@ class Denoiser extends AudioWorkletProcessor {
       if (first) this.noise[k] = this.pow[k]
       else if (this.pow[k] < this.noise[k]) this.noise[k] = this.pow[k]
       else this.noise[k] = this.noise[k] * RISE + 1e-12
+      sumP += p; sumN += BIAS * this.noise[k]
       let g = 1
       if (this.on) g = Math.max(this.floor, 1 - (this.alpha * BIAS * this.noise[k]) / Math.max(p, 1e-12))
       // Sobe rápido (não corta o ataque da nota) e desce devagar (menos "chiado metálico").
       this.gain[k] = g > this.gain[k] ? g : 0.65 * this.gain[k] + 0.35 * g
       const gk = this.gain[k]
       re[k] *= gk; im[k] *= gk
+    }
+    // Portão: janela só com ruído (energia perto do chão) é abaixada inteira.
+    const target = this.on && sumP < sumN * 2.5 ? this.gate : 1
+    this.gateGain = target < this.gateGain ? 0.85 * this.gateGain + 0.15 * target : 0.4 * this.gateGain + 0.6 * target
+    for (let k = 0; k <= HALF; k++) {
+      re[k] *= this.gateGain; im[k] *= this.gateGain
       if (k > 0 && k < HALF) { re[N - k] = re[k]; im[N - k] = -im[k] }
     }
     this.fft(re, im, true)
