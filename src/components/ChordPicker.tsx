@@ -126,7 +126,7 @@ export function ChordPicker({ chord, onChange }: Props) {
               key={r.name}
               onClick={() => onChange({ root: r.name, quality: chord.quality })}
               className={`rounded-lg px-1 py-2 font-display text-sm font-semibold transition ${
-                active ? 'bg-accent text-white shadow-lg shadow-accent/30' : 'bg-white/5 text-slate-200 hover:bg-white/10'
+                active ? 'bg-accent text-[#fff] shadow-lg shadow-accent/30' : 'bg-white/5 text-slate-200 hover:bg-white/10'
               }`}
               aria-pressed={active}
             >

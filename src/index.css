@@ -20,7 +20,8 @@ body,
 
 body {
   background: var(--color-ink);
-  color: #e6e9f0;
+  color: var(--app-text, #e6e9f0);
+  transition: background-color 0.3s, color 0.3s;
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
@@ -41,6 +42,34 @@ body {
   }
 }
 
+/* Cores base dos botões (o tema claro troca pelas versões claras). */
+:root {
+  --btn-text: #f1f5f9;
+  --btn-top: #262e41;
+  --btn-bottom: #171c28;
+  --btn-border: #36405a;
+  --btn-edge: #090c13;
+}
+:root[data-theme='claro'] {
+  --btn-text: #1b1f2a;
+  --btn-top: #ffffff;
+  --btn-bottom: #ece8df;
+  --btn-border: #d4cec1;
+  --btn-edge: #bdb6a6;
+}
+:root[data-theme='madeira'] {
+  --btn-top: #3a2a1d;
+  --btn-bottom: #22170f;
+  --btn-border: #4d3826;
+  --btn-edge: #0b0705;
+}
+:root[data-theme='oceano'] {
+  --btn-top: #163247;
+  --btn-bottom: #0b1d2b;
+  --btn-border: #22486a;
+  --btn-edge: #020a10;
+}
+
 /* Botões com cara de botão (relevo, sombra e "afundam" ao clicar).
    Ficam na camada "components" para as classes do Tailwind poderem ajustar. */
 @layer components {
@@ -53,12 +82,12 @@ body {
     padding: 0.55rem 1rem;
     font-size: 0.875rem;
     font-weight: 600;
-    color: #f1f5f9;
-    background: linear-gradient(180deg, #262e41, #171c28);
-    border: 1px solid #36405a;
+    color: var(--btn-text);
+    background: linear-gradient(180deg, var(--btn-top), var(--btn-bottom));
+    border: 1px solid var(--btn-border);
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.09),
-      0 3px 0 #090c13,
+      0 3px 0 var(--btn-edge),
       0 6px 14px rgba(0, 0, 0, 0.35);
     transition:
       transform 0.08s,
@@ -74,7 +103,7 @@ body {
     transform: translateY(2px);
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.06),
-      0 1px 0 #090c13;
+      0 1px 0 var(--btn-edge);
   }
   .btn:focus-visible {
     outline: 2px solid #22d3ee;
@@ -87,19 +116,25 @@ body {
     transform: none;
   }
   .btn-primary {
-    background: linear-gradient(180deg, #8f72ff, #5a3ddd);
-    border-color: #a38cff;
+    color: #fff;
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--color-accent), white 18%),
+      color-mix(in oklab, var(--color-accent), black 18%)
+    );
+    border-color: color-mix(in oklab, var(--color-accent), white 35%);
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.25),
-      0 3px 0 #33208a,
-      0 8px 18px rgba(124, 92, 255, 0.35);
+      0 3px 0 color-mix(in oklab, var(--color-accent), black 55%),
+      0 8px 18px color-mix(in oklab, var(--color-accent), transparent 65%);
   }
   .btn-primary:active {
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.2),
-      0 1px 0 #33208a;
+      0 1px 0 color-mix(in oklab, var(--color-accent), black 55%);
   }
   .btn-danger {
+    color: #fff;
     background: linear-gradient(180deg, #f8627a, #cf2f4c);
     border-color: #ff8a9d;
     box-shadow:

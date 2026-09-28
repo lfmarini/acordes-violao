@@ -6,13 +6,15 @@ import { Fretboard } from './components/Fretboard'
 import { CircleOfFifths } from './components/CircleOfFifths'
 import { HarmonicField } from './components/HarmonicField'
 import { Learning } from './components/Learning'
+import { ThemePicker } from './components/ThemePicker'
 import { TheoryPanel } from './components/TheoryPanel'
 import { defaultMode, type Mode } from './lib/harmony'
 import { VariationsBar } from './components/VariationsBar'
 import { STRUM_DELAY_MS, STRUM_MAX_MS, STRUM_MIN_MS, playShape, setVolume } from './lib/audio'
 import { QUALITIES, chordDisplayName, shapesFor, type ChordRef } from './lib/chords'
 import { useStoredState } from './lib/storage'
-import { DEGREES, analyze } from './lib/theory'
+import { DEGREES, analyze, type DegreeId } from './lib/theory'
+import { useTheme } from './lib/themes'
 
 // O fundo 3D fica fora do pacote inicial: só é baixado depois que a tela aparece.
 const Background3D = lazy(() => import('./three/Background3D'))
@@ -31,6 +33,7 @@ const toRef = (c: StoredChord): ChordRef => ({
 const keyOf = (c: ChordRef) => `${c.root}|${c.quality.id}`
 
 export default function App() {
+  const theme = useTheme()
   const [stored, setStored] = useStoredState<StoredChord>('ultimo-acorde', { root: 'C', q: 'maior' })
   const [fingers, setFingers] = useStoredState('dedos', true)
   const [lefty, setLefty] = useStoredState('canhoto', false)
@@ -127,16 +130,18 @@ export default function App() {
         </Suspense>
       )}
       <div className="mx-auto flex min-h-dvh w-full max-w-6xl min-w-0 flex-col gap-5 px-2 pt-5 pb-10 sm:px-6">
-        <header className="flex items-end justify-between gap-3">
+        <header className="relative z-30 flex items-end justify-between gap-3">
           <div>
             <h1 className="font-display text-2xl font-bold tracking-tight sm:text-3xl">
               Acordes <span className="text-accent-2">Violão</span>
             </h1>
             <p className="text-sm text-slate-400">Forma no braço, teoria de cada grau e som.</p>
           </div>
+          <div className="flex shrink-0 items-center gap-2">
+          <ThemePicker />
           <button
             onClick={() => setCaptureOpen(true)}
-            className="flex shrink-0 items-center gap-2 rounded-full bg-gradient-to-r from-accent to-accent-2 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-accent/30 transition hover:scale-105 active:scale-95"
+            className="flex shrink-0 items-center gap-2 rounded-full bg-gradient-to-r from-accent to-accent-2 px-4 py-2.5 text-sm font-semibold text-[#fff] shadow-lg shadow-accent/30 transition hover:scale-105 active:scale-95"
           >
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden>
               <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z" />
@@ -145,6 +150,7 @@ export default function App() {
               Capturar<span className="hidden sm:inline"> acorde</span>
             </span>
           </button>
+          </div>
         </header>
         <ChordCapture
           open={captureOpen}
@@ -164,7 +170,7 @@ export default function App() {
               aria-selected={tab === t.id}
               onClick={() => setTab(t.id)}
               className={`flex-1 rounded-full px-5 py-2 font-semibold transition sm:flex-none ${
-                tab === t.id ? 'bg-accent text-white shadow-lg shadow-accent/30' : 'text-slate-400 hover:text-white'
+                tab === t.id ? 'bg-accent text-[#fff] shadow-lg shadow-accent/30' : 'text-slate-400 hover:text-white'
               }`}
             >
               {t.label}
@@ -232,7 +238,7 @@ export default function App() {
                 onClick={play}
                 disabled={!shape}
                 aria-label="Tocar o acorde"
-                className="grid h-16 w-16 shrink-0 place-items-center rounded-full bg-gradient-to-br from-accent to-accent-2 text-white shadow-xl shadow-accent/40 transition hover:scale-105 active:scale-95 disabled:opacity-40"
+                className="grid h-16 w-16 shrink-0 place-items-center rounded-full bg-gradient-to-br from-accent to-accent-2 text-[#fff] shadow-xl shadow-accent/40 transition hover:scale-105 active:scale-95 disabled:opacity-40"
               >
                 <svg viewBox="0 0 24 24" className="ml-1 h-8 w-8" fill="currentColor" aria-hidden>
                   <path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5Z" />
@@ -263,7 +269,7 @@ export default function App() {
                     if (muted) setMuted(false)
                   }}
                   aria-label="Volume"
-                  className="w-24 accent-[#22d3ee]"
+                  className="w-24 accent-[var(--color-accent-2)]"
                 />
               </div>
             </div>
@@ -281,7 +287,7 @@ export default function App() {
                 onChange={(e) => setStrumMs(sliderToStrum(Number(e.target.value)))}
                 aria-label="Velocidade do ataque"
                 aria-valuetext={`${strumMs} milissegundos entre as cordas`}
-                className="min-w-0 flex-1 accent-[#7c5cff]"
+                className="min-w-0 flex-1 accent-[var(--color-accent)]"
               />
               <span className="shrink-0 text-xs text-slate-500">lento</span>
               <button
@@ -325,12 +331,12 @@ export default function App() {
                 .filter(([id]) => ['root', 'third', 'fifth', 'seventh', 'ninth'].includes(id) || usedDegrees.has(id as never))
                 .map(([id, d]) => (
                   <li key={id} className={`flex items-center gap-1.5 ${usedDegrees.has(id as never) ? '' : 'opacity-40'}`}>
-                    <span className="h-3 w-3 rounded-full" style={{ background: d.color }} />
+                    <span className="h-3 w-3 rounded-full" style={{ background: theme.degrees[id as DegreeId].color }} />
                     {d.name}
                   </li>
                 ))}
               <li className="flex items-center gap-1.5">
-                <span className="font-bold text-[#ff6b6b]">X</span> não tocar
+                <span className="font-bold" style={{ color: theme.board.muted }}>X</span> não tocar
               </li>
               <li className="flex items-center gap-1.5">
                 <span className="h-3 w-3 rounded-full border-2 border-slate-200" /> corda solta

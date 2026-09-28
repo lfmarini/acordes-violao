@@ -51,6 +51,8 @@ e no computador.
   marca cada troca no gráfico. Dá para ouvir a última gravação no próprio app,
   escolher se o som do metrônomo entra no arquivo e ligar a redução de ruído
   (fraca, média ou forte), que tira chiado e barulho constante do ambiente.
+- **Tema de cores**: botão "Tema" no topo com 5 paletas (Neon, Madeira,
+  Oceano, Daltônico-seguro e Claro). Neon é o padrão e a escolha fica salva.
 - **Favoritos** com estrela e lembrança do último acorde, tudo salvo no navegador.
 
 ## Tecnologias
@@ -68,7 +70,7 @@ vite-plugin-pwa (modo offline) e [lamejs](https://github.com/breezystack/lamejs)
 | --- | --- |
 | Atraso padrão e limites do ataque (`STRUM_DELAY_MS`) | `src/lib/audio.ts` |
 | Timbre da corda (sustentação, brilho) | `src/lib/ks.ts` e `src/lib/audio.ts` |
-| Cores de cada grau | `src/lib/theory.ts` |
+| Temas e cores de cada grau | `src/lib/themes.ts` |
 | Tradução da cifra brasileira | `src/lib/parser.ts` |
 | Qualidades de acorde da lista | `src/lib/chords.ts` |
 | Campo harmônico | `src/lib/harmony.ts` |

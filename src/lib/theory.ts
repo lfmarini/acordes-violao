@@ -12,14 +12,15 @@ import { OPEN_STRINGS, chordTonalName, type ChordRef } from './chords'
 
 export type DegreeId = 'root' | 'third' | 'fifth' | 'seventh' | 'ninth' | 'fourth' | 'sixth'
 
-export const DEGREES: Record<DegreeId, { name: string; color: string; ink: string }> = {
-  root: { name: 'Fundamental', color: '#ff5c6c', ink: '#1a0306' },
-  third: { name: 'Terça', color: '#ffc542', ink: '#1f1400' },
-  fifth: { name: 'Quinta', color: '#3ecbff', ink: '#001722' },
-  seventh: { name: 'Sétima', color: '#b98cff', ink: '#12032b' },
-  ninth: { name: 'Nona', color: '#4ee38a', ink: '#00210d' },
-  fourth: { name: 'Quarta', color: '#ff8ad8', ink: '#2a0520' },
-  sixth: { name: 'Sexta', color: '#ff9a3c', ink: '#241000' },
+// Nome de cada grau. As cores ficam nos temas (src/lib/themes.ts).
+export const DEGREES: Record<DegreeId, { name: string }> = {
+  root: { name: 'Fundamental' },
+  third: { name: 'Terça' },
+  fifth: { name: 'Quinta' },
+  seventh: { name: 'Sétima' },
+  ninth: { name: 'Nona' },
+  fourth: { name: 'Quarta' },
+  sixth: { name: 'Sexta' },
 }
 
 // Graus que sempre aparecem no painel (mesmo ausentes, em cinza).

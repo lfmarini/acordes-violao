@@ -129,7 +129,7 @@ export function MetronomePanel({ onBeat, active }: Props) {
         value={bpm}
         onChange={(e) => setBpm(clampBpm(Number(e.target.value)))}
         aria-label="Andamento em batidas por minuto"
-        className="mt-4 w-full accent-[#7c5cff]"
+        className="mt-4 w-full accent-[var(--color-accent)]"
       />
       <div className="flex justify-between text-xs text-slate-500">
         <span>{BPM_MIN}</span>
@@ -173,7 +173,7 @@ export function MetronomePanel({ onBeat, active }: Props) {
             value={volume}
             onChange={(e) => setVolume(Number(e.target.value))}
             aria-label="Volume do metrônomo"
-            className="w-24 accent-[#22d3ee]"
+            className="w-24 accent-[var(--color-accent-2)]"
           />
         </label>
       </div>

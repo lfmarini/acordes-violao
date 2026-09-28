@@ -204,7 +204,7 @@ export function ChordCapture({ open, onClose, onPick }: Props) {
               <button
                 onClick={busy ? stop : start}
                 aria-label={busy ? 'Parar' : 'Ouvir o acorde'}
-                className={`relative grid h-28 w-28 place-items-center rounded-full bg-gradient-to-br from-accent to-accent-2 text-white shadow-2xl shadow-accent/40 transition hover:scale-105 active:scale-95 ${
+                className={`relative grid h-28 w-28 place-items-center rounded-full bg-gradient-to-br from-accent to-accent-2 text-[#fff] shadow-2xl shadow-accent/40 transition hover:scale-105 active:scale-95 ${
                   phase === 'listening' ? 'animate-pulse' : ''
                 }`}
               >

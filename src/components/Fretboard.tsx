@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { hzOf } from '../lib/audio'
 import { OPEN_STRINGS, STRING_NAMES, windowSize, type Shape } from '../lib/chords'
-import { DEGREES, chromaAt, noteAt, type Analysis } from '../lib/theory'
+import { useTheme } from '../lib/themes'
+import { chromaAt, noteAt, type Analysis } from '../lib/theory'
 
 // ---------------------------------------------------------------------------
 // Braço do violão em SVG 2D, na vertical (como nas revistas de cifra):
@@ -16,8 +17,6 @@ const LEFT = 52
 const RIGHT = 52
 const STRING_WIDTH = [3.4, 2.8, 2.3, 1.8, 1.4, 1.1] // 6ª é a mais grossa
 const INLAYS = [3, 5, 7, 9] // e as mesmas uma oitava acima (15, 17...)
-const MUTED_COLOR = '#ff6b6b'
-const NEUTRAL = '#e5e9f0'
 
 export interface FretboardProps {
   shape: Shape | null
@@ -40,6 +39,8 @@ export function Fretboard({
   mini = false,
   className,
 }: FretboardProps) {
+  const theme = useTheme()
+  const B = theme.board
   const base = shape?.baseFret ?? 1
   const frets = windowSize(shape)
   const top = mini ? 34 : 70
@@ -52,7 +53,7 @@ export function Fretboard({
 
   const colorAt = (s: number, fret: number) => {
     const member = analysis?.byChroma.get(chromaAt(s, fret))
-    return member ? DEGREES[member.degree] : { color: NEUTRAL, ink: '#0b0d12' }
+    return member ? theme.degrees[member.degree] : { color: B.neutral, ink: '#0b0d12' }
   }
   const dim = (s: number, fret: number) => highlight !== null && chromaAt(s, fret) !== highlight
 
@@ -91,17 +92,17 @@ export function Fretboard({
       aria-label={shape ? `Diagrama do acorde, a partir da ${base}ª casa` : 'Braço do violão vazio'}
     >
       {/* Madeira do braço */}
-      <rect x={LEFT - 22} y={top} width={5 * SG + 44} height={frets * FG} rx={6} fill="#141824" />
+      <rect x={LEFT - 22} y={top} width={5 * SG + 44} height={frets * FG} rx={6} fill={B.wood} />
 
       {/* Marcações do braço (bolinhas nas casas 3, 5, 7, 9, 12...) */}
       {Array.from({ length: frets }, (_, k) => base + k).map((f) =>
         f % 12 === 0 ? (
-          <g key={`in${f}`} fill="#262c3d">
+          <g key={`in${f}`} fill={B.inlay}>
             <circle cx={LEFT + 1.5 * SG} cy={y(f)} r={7} />
             <circle cx={LEFT + 3.5 * SG} cy={y(f)} r={7} />
           </g>
         ) : INLAYS.includes(f % 12) ? (
-          <circle key={`in${f}`} cx={LEFT + 2.5 * SG} cy={y(f)} r={7} fill="#262c3d" />
+          <circle key={`in${f}`} cx={LEFT + 2.5 * SG} cy={y(f)} r={7} fill={B.inlay} />
         ) : null,
       )}
 
@@ -113,14 +114,14 @@ export function Fretboard({
           x2={LEFT + 5 * SG + 22}
           y1={top + k * FG}
           y2={top + k * FG}
-          stroke="#8a93a8"
+          stroke={B.fret}
           strokeWidth={k === 0 && base === 1 ? 0 : 2}
         />
       ))}
 
       {/* Pestana do violão (nut): barra grossa quando a janela começa na 1ª casa */}
       {base === 1 && (
-        <rect x={LEFT - 22} y={top - 7} width={5 * SG + 44} height={9} rx={2} fill="#f3efe6" />
+        <rect x={LEFT - 22} y={top - 7} width={5 * SG + 44} height={9} rx={2} fill={B.nut} />
       )}
 
       {/* Número da casa inicial, ao lado do diagrama */}
@@ -137,7 +138,7 @@ export function Fretboard({
         </text>
       )}
       {mini && base > 1 && (
-        <text x={lefty ? width - 4 : 8} y={y(base) + 8} textAnchor={lefty ? 'end' : 'start'} fill="#cbd5e1" fontSize={26} fontWeight={700}>
+        <text x={lefty ? width - 4 : 8} y={y(base) + 8} textAnchor={lefty ? 'end' : 'start'} fill={B.sub} fontSize={26} fontWeight={700}>
           {base}
         </text>
       )}
@@ -152,7 +153,7 @@ export function Fretboard({
             x2={x(s)}
             y1={top}
             y2={top + frets * FG}
-            stroke={s < 3 ? '#d8c29a' : '#e3e8f0'}
+            stroke={s < 3 ? B.wound : B.plain}
             strokeOpacity={muted ? 0.35 : 0.95}
             strokeWidth={w}
           />
@@ -184,7 +185,7 @@ export function Fretboard({
         if (fret < 0) {
           const d = mini ? 8 : 10
           return (
-            <g key={`xo${s}`} stroke={MUTED_COLOR} strokeWidth={mini ? 4 : 4.5} strokeLinecap="round">
+            <g key={`xo${s}`} stroke={B.muted} strokeWidth={mini ? 4 : 4.5} strokeLinecap="round">
               <line x1={x(s) - d} y1={xoY - d} x2={x(s) + d} y2={xoY + d} />
               <line x1={x(s) - d} y1={xoY + d} x2={x(s) + d} y2={xoY - d} />
             </g>
@@ -221,8 +222,10 @@ export function Fretboard({
               exit={{ opacity: 0 }}
               height={r * 2}
               rx={r}
-              fill="rgba(229,233,240,0.42)"
-              stroke="rgba(255,255,255,0.75)"
+              fill={B.neutral}
+              fillOpacity={0.42}
+              stroke={B.neutral}
+              strokeOpacity={0.8}
               strokeWidth={2}
             />
           )
@@ -277,13 +280,13 @@ export function Fretboard({
           return (
             <g key={`n${s}`} textAnchor="middle" opacity={muted ? 0.35 : 1}>
               <title>{`${name} corda: ${note} (${hz.toFixed(2)} Hz)`}</title>
-              <text x={x(s)} y={top + frets * FG + 24} fontSize={15} fontWeight={700} fill="#e2e8f0">
+              <text x={x(s)} y={top + frets * FG + 24} fontSize={15} fontWeight={700} fill={B.label}>
                 {name}
               </text>
-              <text x={x(s)} y={top + frets * FG + 45} fontSize={14} fontWeight={600} fill={muted ? '#94a3b8' : colorAt(s, fret).color}>
+              <text x={x(s)} y={top + frets * FG + 45} fontSize={14} fontWeight={600} fill={muted ? B.sub : colorAt(s, fret).color}>
                 {note}
               </text>
-              <text x={x(s)} y={top + frets * FG + 64} fontSize={11} fill="#94a3b8">
+              <text x={x(s)} y={top + frets * FG + 64} fontSize={11} fill={B.sub}>
                 {Math.round(hz)} Hz
               </text>
             </g>

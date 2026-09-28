@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion'
 import { Note } from 'tonal'
 import { chordDisplayName, type ChordRef } from '../lib/chords'
+import { useTheme } from '../lib/themes'
 import { DEGREES, describeInterval, type Analysis } from '../lib/theory'
 
 interface Props {
@@ -13,6 +14,7 @@ interface Props {
 // Painel com cada grau do acorde. A cor de cada linha é a mesma dos círculos
 // no braço; passar o mouse (ou tocar) numa linha destaca a nota no braço.
 export function TheoryPanel({ chord, analysis, highlight, onHighlight }: Props) {
+  const theme = useTheme()
   return (
     <aside className="min-w-0 rounded-2xl border border-line bg-panel/80 p-3 backdrop-blur sm:p-5">
       <h2 className="font-display text-xl font-bold">
@@ -24,7 +26,7 @@ export function TheoryPanel({ chord, analysis, highlight, onHighlight }: Props) 
 
       <ul className="space-y-2">
         {analysis.rows.map((row) => {
-          const d = DEGREES[row.degree]
+          const d = { ...DEGREES[row.degree], color: theme.degrees[row.degree].color }
           if (row.present.length === 0) {
             // Grau ausente: mostramos em cinza qual nota ele seria.
             return (
@@ -57,8 +59,8 @@ export function TheoryPanel({ chord, analysis, highlight, onHighlight }: Props) 
                 onClick={() => onHighlight(on ? null : chroma)}
                 className="flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 outline-none transition"
                 style={{
-                  borderColor: on ? d.color : 'rgba(255,255,255,0.08)',
-                  background: on ? `${d.color}22` : 'rgba(255,255,255,0.02)',
+                  borderColor: on ? d.color : 'color-mix(in oklab, var(--app-text), transparent 90%)',
+                  background: on ? `${d.color}22` : 'color-mix(in oklab, var(--app-text), transparent 97%)',
                 }}
               >
                 <span className="h-4 w-4 shrink-0 rounded-full" style={{ background: d.color, boxShadow: `0 0 12px ${d.color}88` }} />

@@ -5,6 +5,7 @@ import { analyzeSpectrum } from '../lib/recognize'
 import { NOISE_LEVELS, createDenoiser, setNoiseLevel, type NoiseLevel } from '../lib/denoise'
 import { MAX_RECORD_MIN, MP3_KBPS, Recorder, downloadBlob } from '../lib/recorder'
 import { useStoredState } from '../lib/storage'
+import { useTheme } from '../lib/themes'
 
 // ---------------------------------------------------------------------------
 // Gráfico da amplitude sonora ao longo do tempo, captada pelo microfone.
@@ -86,6 +87,7 @@ function prepare(c: HTMLCanvasElement) {
 }
 
 export function AmplitudeChart({ beats, active, onPick }: Props) {
+  const theme = useTheme()
   const canvas = useRef<HTMLCanvasElement>(null)
   const track = useRef<HTMLCanvasElement>(null)
   const samples = useRef<{ t: number; db: number }[]>([])
@@ -162,6 +164,7 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
   }, [])
 
   const draw = useCallback(() => {
+    const K = theme.chart
     const end = endTime()
     const view = Math.min(end, cursorRef.current ?? end) // fim da janela de 8 s
     const play = playTime()
@@ -176,8 +179,8 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
       const inView = (t: number) => t <= view && view - t <= WINDOW_S * 1000
 
       g.font = '10px Inter Variable, sans-serif'
-      g.fillStyle = '#64748b'
-      g.strokeStyle = 'rgba(255,255,255,0.06)'
+      g.fillStyle = K.axis
+      g.strokeStyle = K.grid
       g.lineWidth = 1
       for (const db of [0, ...GRID_DB, DB_FLOOR]) {
         g.beginPath()
@@ -196,7 +199,7 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
 
       for (const bt of beats.current ?? []) {
         if (!inView(bt.at)) continue
-        g.strokeStyle = bt.accent ? 'rgba(124,92,255,0.8)' : 'rgba(124,92,255,0.35)'
+        g.strokeStyle = bt.accent ? `rgba(${K.beat},0.8)` : `rgba(${K.beat},0.35)`
         g.lineWidth = bt.accent ? 2 : 1
         g.beginPath()
         g.moveTo(x(bt.at), 20)
@@ -207,9 +210,9 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
       const pts = samples.current.filter((pt) => inView(pt.t))
       if (pts.length > 1) {
         const grad = g.createLinearGradient(0, y(0), 0, y(DB_FLOOR))
-        grad.addColorStop(0, 'rgba(255,92,108,0.9)')
-        grad.addColorStop(0.35, 'rgba(34,211,238,0.7)')
-        grad.addColorStop(1, 'rgba(34,211,238,0.05)')
+        grad.addColorStop(0, K.fill[0])
+        grad.addColorStop(0.35, K.fill[1])
+        grad.addColorStop(1, K.fill[2])
         g.beginPath()
         g.moveTo(x(pts[0].t), y(DB_FLOOR))
         for (const pt of pts) g.lineTo(x(pt.t), y(pt.db))
@@ -219,7 +222,7 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
         g.fill()
         g.beginPath()
         pts.forEach((pt, i) => (i ? g.lineTo(x(pt.t), y(pt.db)) : g.moveTo(x(pt.t), y(pt.db))))
-        g.strokeStyle = '#67e8f9'
+        g.strokeStyle = K.line
         g.lineWidth = 1.5
         g.stroke()
       }
@@ -229,14 +232,14 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
       for (const m of marks.current) {
         if (!inView(m.t)) continue
         const xx = x(m.t)
-        g.fillStyle = 'rgba(255,197,66,0.9)'
+        g.fillStyle = K.mark
         g.fillRect(xx, 4, 1.5, 12)
         g.fillText(m.label, xx + 4, 14)
       }
 
       // Onde o replay está tocando.
       if (play !== null && inView(play)) {
-        g.strokeStyle = '#ffffff'
+        g.strokeStyle = K.playhead
         g.lineWidth = 2
         g.beginPath()
         g.moveTo(x(play), 18)
@@ -257,7 +260,7 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
         const k = Math.floor((pt.t - (end - HISTORY_S * 1000)) / slice)
         if (k >= 0 && k < cols) maxes[k] = Math.max(maxes[k], pt.db)
       }
-      g.fillStyle = '#22d3ee'
+      g.fillStyle = theme.ui.accent2
       maxes.forEach((db, k) => {
         const bh = (h - 4) * (1 - db / DB_FLOOR)
         if (bh > 0.5) g.fillRect(k * (w / cols), h - 2 - bh, Math.max(1, w / cols - 1), bh)
@@ -265,19 +268,19 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
       // Trecho que aparece no gráfico grande (arraste para mudar).
       const x0 = x(view - WINDOW_S * 1000)
       const x1 = x(view)
-      g.fillStyle = 'rgba(124,92,255,0.22)'
+      g.fillStyle = `rgba(${K.beat},0.22)`
       g.fillRect(x0, 0, x1 - x0, h)
-      g.strokeStyle = 'rgba(163,140,255,0.95)'
+      g.strokeStyle = `rgba(${K.beat},0.95)`
       g.lineWidth = 1.5
       g.strokeRect(x0 + 0.75, 0.75, x1 - x0 - 1.5, h - 1.5)
-      g.fillStyle = 'rgba(255,197,66,0.9)'
+      g.fillStyle = K.mark
       for (const m of marks.current) if (end - m.t <= HISTORY_S * 1000) g.fillRect(x(m.t), 0, 1, 5)
       if (play !== null) {
-        g.fillStyle = '#ffffff'
+        g.fillStyle = K.playhead
         g.fillRect(x(play) - 1, 0, 2, h)
       }
     }
-  }, [beats, endTime, playTime])
+  }, [beats, endTime, playTime, theme])
 
   // Arrastar (ou tocar) a trilha de 1 min: a janela de 8 s fica centrada no
   // ponto escolhido e, se o replay estiver aberto, ele pula para lá.

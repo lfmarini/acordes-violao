@@ -90,16 +90,18 @@ export function CircleOfFifths({ chord, mode, onPick }: Props) {
               <title>{`${MAJOR_LABEL[p]} maior`}</title>
               <path
                 d={sector(p, R_MID, R_OUT)}
-                fill={tonic ? '#7c5cff' : role ? 'rgba(124,92,255,0.28)' : 'rgba(255,255,255,0.03)'}
-                stroke="#05060a"
+                style={{
+                  fill: tonic ? 'var(--color-accent)' : role ? 'color-mix(in oklab, var(--color-accent), transparent 70%)' : 'color-mix(in oklab, var(--app-text), transparent 96%)',
+                  stroke: 'var(--color-ink)',
+                }}
                 strokeWidth={2}
                 className="transition-colors hover:brightness-150"
               />
-              <text x={l.x} y={l.y - (role ? 3 : -5)} textAnchor="middle" fontSize={MAJOR_LABEL[p].length > 3 ? 12 : 16} fontWeight={700} fill={role ? '#fff' : '#94a3b8'} className="pointer-events-none font-display">
+              <text x={l.x} y={l.y - (role ? 3 : -5)} textAnchor="middle" fontSize={MAJOR_LABEL[p].length > 3 ? 12 : 16} fontWeight={700} style={{ fill: role ? (tonic ? '#fff' : 'var(--app-text)') : 'color-mix(in oklab, var(--app-text), transparent 45%)' }} className="pointer-events-none font-display">
                 {MAJOR_LABEL[p]}
               </text>
               {role && (
-                <text x={l.x} y={l.y + 13} textAnchor="middle" fontSize={10} fill="#c4b5fd" className="pointer-events-none">
+                <text x={l.x} y={l.y + 13} textAnchor="middle" fontSize={10} style={{ fill: tonic ? '#fff' : 'color-mix(in oklab, var(--color-accent), var(--app-text) 45%)' }} className="pointer-events-none">
                   {role}
                 </text>
               )}
@@ -115,16 +117,18 @@ export function CircleOfFifths({ chord, mode, onPick }: Props) {
               <title>{`${MINOR_LABEL[p]} (relativo de ${MAJOR_LABEL[p]})`}</title>
               <path
                 d={sector(p, R_IN, R_MID)}
-                fill={tonic ? '#22d3ee' : role ? 'rgba(34,211,238,0.22)' : 'rgba(255,255,255,0.02)'}
-                stroke="#05060a"
+                style={{
+                  fill: tonic ? 'var(--color-accent-2)' : role ? 'color-mix(in oklab, var(--color-accent-2), transparent 76%)' : 'color-mix(in oklab, var(--app-text), transparent 97%)',
+                  stroke: 'var(--color-ink)',
+                }}
                 strokeWidth={2}
                 className="transition-colors hover:brightness-150"
               />
-              <text x={l.x} y={l.y - (role ? 2 : -4)} textAnchor="middle" fontSize={MINOR_LABEL[p].length > 4 ? 8 : 12} fontWeight={600} fill={tonic ? '#001722' : role ? '#e0f7fb' : '#7c8799'} className="pointer-events-none">
+              <text x={l.x} y={l.y - (role ? 2 : -4)} textAnchor="middle" fontSize={MINOR_LABEL[p].length > 4 ? 8 : 12} fontWeight={600} style={{ fill: tonic ? 'var(--color-ink)' : role ? 'var(--app-text)' : 'color-mix(in oklab, var(--app-text), transparent 45%)' }} className="pointer-events-none">
                 {MINOR_LABEL[p]}
               </text>
               {role && (
-                <text x={l.x} y={l.y + 11} textAnchor="middle" fontSize={9} fill={tonic ? '#001722' : '#67e8f9'} className="pointer-events-none">
+                <text x={l.x} y={l.y + 11} textAnchor="middle" fontSize={9} style={{ fill: tonic ? 'var(--color-ink)' : 'color-mix(in oklab, var(--color-accent-2), var(--app-text) 25%)' }} className="pointer-events-none">
                   {role}
                 </text>
               )}
@@ -132,12 +136,12 @@ export function CircleOfFifths({ chord, mode, onPick }: Props) {
           )
         })}
         {/* Centro: o tom e a armadura */}
-        <circle cx={C} cy={C} r={R_IN - 4} fill="#0d1019" />
-        <text x={C} y={C - 4} textAnchor="middle" fontSize={20} fontWeight={700} fill="#fff" className="font-display">
+        <circle cx={C} cy={C} r={R_IN - 4} style={{ fill: 'var(--color-panel)' }} />
+        <text x={C} y={C - 4} textAnchor="middle" fontSize={20} fontWeight={700} style={{ fill: 'var(--app-text)' }} className="font-display">
           {info.tonic}
           {mode === 'minor' ? 'm' : ''}
         </text>
-        <text x={C} y={C + 16} textAnchor="middle" fontSize={11} fill="#94a3b8">
+        <text x={C} y={C + 16} textAnchor="middle" fontSize={11} style={{ fill: 'color-mix(in oklab, var(--app-text), transparent 45%)' }}>
           {info.alteration === 0 ? 'sem acidentes' : `${Math.abs(info.alteration)} ${info.alteration > 0 ? '♯' : '♭'}`}
         </text>
       </svg>

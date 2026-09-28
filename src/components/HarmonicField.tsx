@@ -22,7 +22,7 @@ export function HarmonicField({ chord, mode, onMode, onPick }: Props) {
               key={m}
               onClick={() => onMode(m)}
               aria-pressed={mode === m}
-              className={`rounded-full px-3 py-1 transition ${mode === m ? 'bg-accent text-white' : 'text-slate-400 hover:text-white'}`}
+              className={`rounded-full px-3 py-1 transition ${mode === m ? 'bg-accent text-[#fff]' : 'text-slate-400 hover:text-white'}`}
             >
               {m === 'major' ? 'maior' : 'menor'}
             </button>
