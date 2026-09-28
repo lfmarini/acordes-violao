@@ -29,9 +29,19 @@ class Capture extends AudioWorkletProcessor {
 registerProcessor('capture', Capture)
 `
 
+/** Batida do metrônomo: horário (performance.now) e se é o 1º tempo. */
+export interface Click {
+  at: number
+  accent: boolean
+}
+/** Volume do metrônomo misturado na gravação (0 a 1). */
+const CLICK_LEVEL = 0.35
+
 export class Recorder {
   private chunks: Int16Array[] = []
-  private length = 0
+  private length = 0 // amostras guardadas agora
+  private total = 0 // amostras recebidas desde o início (inclui as descartadas)
+  private startPerf = 0 // horário (performance.now) da primeira amostra
   sampleRate = 48000
   private node: AudioWorkletNode | null = null
 
@@ -43,6 +53,8 @@ export class Recorder {
   async attach(ctx: AudioContext, source: AudioNode) {
     this.chunks = []
     this.length = 0
+    this.total = 0
+    this.startPerf = 0
     this.sampleRate = ctx.sampleRate
     const url = URL.createObjectURL(new Blob([WORKLET], { type: 'application/javascript' }))
     try {
@@ -66,6 +78,9 @@ export class Recorder {
   }
 
   private push(block: Float32Array) {
+    // A primeira amostra do bloco soou há "tamanho do bloco" segundos.
+    if (this.total === 0) this.startPerf = performance.now() - (block.length / this.sampleRate) * 1000
+    this.total += block.length
     const pcm = new Int16Array(block.length)
     for (let i = 0; i < block.length; i++) {
       const v = Math.max(-1, Math.min(1, block[i]))
@@ -78,7 +93,8 @@ export class Recorder {
   }
 
   /** Os últimos `seconds` segundos gravados (ou tudo, se omitido), em 16 bits. */
-  slice(seconds?: number): Int16Array<ArrayBuffer> {
+  // Com `clicks`, mistura o som do metrônomo nos instantes das batidas.
+  slice(seconds?: number, clicks?: Click[]): Int16Array<ArrayBuffer> {
     const want = seconds ? Math.min(this.length, Math.round(seconds * this.sampleRate)) : this.length
     const data = new Int16Array(want)
     // Copia do fim para o começo, para pegar só o trecho final.
@@ -89,7 +105,36 @@ export class Recorder {
       data.set(c.subarray(c.length - take), pos - take)
       pos -= take
     }
+    if (clicks?.length) this.mixClicks(data, clicks)
     return data
+  }
+
+  // Soma o "tic" do metrônomo em cada batida que cai dentro do trecho.
+  private mixClicks(data: Int16Array, clicks: Click[]) {
+    const sr = this.sampleRate
+    const firstAbs = this.total - data.length // índice absoluto da 1ª amostra do trecho
+    const tone = (accent: boolean) => {
+      const n = Math.round(0.06 * sr)
+      const f = accent ? 1760 : 1100
+      const a = (accent ? 1 : 0.6) * CLICK_LEVEL
+      // Onda triangular com ataque de 2 ms e queda exponencial, igual ao metrônomo.
+      return Float32Array.from({ length: n }, (_, i) => {
+        const t = i / sr
+        const tri = (2 / Math.PI) * Math.asin(Math.sin(2 * Math.PI * f * t))
+        const env = t < 0.002 ? t / 0.002 : Math.exp(-(t - 0.002) / 0.012)
+        return tri * env * a
+      })
+    }
+    const sounds = { true: tone(true), false: tone(false) }
+    for (const c of clicks) {
+      const at = Math.round(((c.at - this.startPerf) / 1000) * sr) - firstAbs
+      const wave = sounds[String(c.accent) as 'true' | 'false']
+      if (at + wave.length < 0 || at >= data.length) continue
+      for (let i = Math.max(0, -at); i < wave.length && at + i < data.length; i++) {
+        const v = data[at + i] + wave[i] * 0x7fff
+        data[at + i] = Math.max(-0x8000, Math.min(0x7fff, v))
+      }
+    }
   }
 
   /**
@@ -97,8 +142,8 @@ export class Recorder {
    * (128 kbps ≈ 1 MB por minuto) e abre em qualquer celular ou computador.
    * A conversão roda num worker; `onProgress` recebe de 0 a 1.
    */
-  toMp3(seconds: number | undefined, onProgress?: (p: number) => void): Promise<Blob> {
-    const pcm = this.slice(seconds)
+  toMp3(seconds: number | undefined, clicks?: Click[], onProgress?: (p: number) => void): Promise<Blob> {
+    const pcm = this.slice(seconds, clicks)
     return new Promise((resolve, reject) => {
       const worker = new Worker(new URL('./mp3.worker.ts', import.meta.url), { type: 'module' })
       worker.onmessage = (e: MessageEvent<{ progress?: number; done?: boolean; parts?: Uint8Array[] }>) => {
@@ -117,8 +162,8 @@ export class Recorder {
   }
 
   /** Arquivo WAV (sem perda de qualidade, mas ~6x maior que o MP3). */
-  toWav(seconds?: number): Blob {
-    const data = this.slice(seconds)
+  toWav(seconds?: number, clicks?: Click[]): Blob {
+    const data = this.slice(seconds, clicks)
     // Cabeçalho WAV (PCM, mono, 16 bits).
     const header = new DataView(new ArrayBuffer(44))
     const text = (o: number, s: string) => [...s].forEach((ch, i) => header.setUint8(o + i, ch.charCodeAt(0)))

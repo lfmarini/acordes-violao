@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react'
 import type { ChordRef } from '../lib/chords'
+import { MAX_RECORD_MIN } from '../lib/recorder'
 import { AmplitudeChart, type BeatMark } from './AmplitudeChart'
 import { MetronomePanel } from './MetronomePanel'
 
@@ -9,7 +10,11 @@ import { MetronomePanel } from './MetronomePanel'
 export function Learning({ active, onPick }: { active: boolean; onPick: (c: ChordRef) => void }) {
   const beats = useRef<BeatMark[]>([])
   const onBeat = useCallback((beat: number, at: number) => {
-    beats.current = [...beats.current.filter((b) => at - b.at < 10000), { at, accent: beat === 0 }]
+    // Guardamos as batidas pelo mesmo tempo da gravação, para poder mistura-las no arquivo.
+    const keep = MAX_RECORD_MIN * 60 * 1000
+    const list = beats.current
+    while (list.length && at - list[0].at > keep) list.shift()
+    list.push({ at, accent: beat === 0 })
   }, [])
 
   return (
