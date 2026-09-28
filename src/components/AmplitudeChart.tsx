@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { chordDisplayName, type ChordRef } from '../lib/chords'
-import { LiveDetector, liveLabel, type LiveResult } from '../lib/liveDetect'
-import { analyzeSpectrum } from '../lib/recognize'
+import { LIVE_GATE_DB, LiveDetector, liveLabel, type LiveResult } from '../lib/liveDetect'
+import { analyzeSpectrum, type Frame } from '../lib/recognize'
 import { NOISE_LEVELS, setNoiseLevel, type NoiseLevel } from '../lib/denoise'
 import { micErrorMessage, openMicrophone, type MicSession } from '../lib/microphone'
 import { MAX_RECORD_MIN, MP3_KBPS, Recorder, downloadBlob, recordingFileName } from '../lib/recorder'
@@ -37,6 +37,8 @@ interface Props {
   beats: React.RefObject<BeatMark[]>
   active: boolean
   onPick: (c: ChordRef) => void
+  /** Notas (MIDI) ouvidas a cada análise, para o braço da aba Aprendizado. */
+  onNotes?: (midis: number[], result: LiveResult, micOn?: boolean) => void
 }
 
 // Opções de salvar: segundos (null = a gravação inteira).
@@ -66,6 +68,19 @@ function sizeLabel(seconds: number, format: Format, sampleRate = 48000) {
 const fileName = (seconds: number | null, format: Format) =>
   recordingFileName('acordes-gravacao', seconds ? `${seconds}s` : 'inteira', format)
 
+// Notas tocadas (com a oitava) num quadro de análise: as fundamentais fortes
+// e bem afinadas (até 30 cents de uma nota da escala), entre E2 e ~E6.
+function notesOf(frame: Frame): number[] {
+  const strongest = Math.max(0, ...frame.fundamentals.map((n) => n.strength))
+  const out = new Set<number>()
+  for (const n of frame.fundamentals) {
+    if (n.strength < strongest * 0.45 || n.f < 75 || n.f > 1400) continue
+    const midi = 69 + 12 * Math.log2(n.f / 440)
+    if (Math.abs(midi - Math.round(midi)) <= 0.3) out.add(Math.round(midi))
+  }
+  return [...out]
+}
+
 const toDb = (rms: number) => Math.max(DB_FLOOR, 20 * Math.log10(Math.max(rms, 1e-6)))
 
 // Ajusta o canvas à tela (nitidez em telas de alta densidade, limitada a 2x).
@@ -83,7 +98,11 @@ function prepare(c: HTMLCanvasElement) {
   return { g, w, h }
 }
 
-export function AmplitudeChart({ beats, active, onPick }: Props) {
+export function AmplitudeChart({ beats, active, onPick, onNotes }: Props) {
+  const onNotesRef = useRef(onNotes)
+  useEffect(() => {
+    onNotesRef.current = onNotes
+  }, [onNotes])
   const theme = useTheme()
   const canvas = useRef<HTMLCanvasElement>(null)
   const track = useRef<HTMLCanvasElement>(null)
@@ -358,6 +377,7 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
     let raf = 0
     let lastUi = 0
     let lastDetect = 0
+    let prevNotes = new Set<number>()
 
     const loop = () => {
       analyser.getFloatTimeDomainData(wave)
@@ -374,7 +394,12 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
         lastDetect = t
         spectrum.getFloatFrequencyData(dbSpec)
         for (let i = 0; i < dbSpec.length; i++) mag[i] = Math.pow(10, dbSpec[i] / 20)
-        const result = detector.update(analyzeSpectrum(mag, ctx.sampleRate, DETECT_FFT), db, dt)
+        const frame = analyzeSpectrum(mag, ctx.sampleRate, DETECT_FFT)
+        const result = detector.update(frame, db, dt)
+        const now = db >= LIVE_GATE_DB ? notesOf(frame) : []
+        // Só vale a nota que aparece em duas análises seguidas (evita "piscadas" no ataque).
+        onNotesRef.current?.(now.filter((m) => prevNotes.has(m)), result)
+        prevNotes = new Set(now)
         const label = liveLabel(result)
         if (label !== lastLabel) {
           lastLabel = label
@@ -406,6 +431,7 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
       mic.close()
       setRecorded(recorder.current?.seconds ?? 0)
       setLive({ kind: 'silence' })
+      onNotesRef.current?.([], { kind: 'silence' }, false)
       denoiser.current = null
       liveRef.current = false
       setOn(false)

@@ -51,6 +51,8 @@ e no computador.
   marca cada troca no gráfico. Dá para ouvir a última gravação no próprio app,
   escolher se o som do metrônomo entra no arquivo e ligar a redução de ruído
   (fraca, média ou forte), que tira chiado e barulho constante do ambiente.
+  Embaixo, o quadro "Notas no braço" mostra o braço inteiro (casas 0 a 12) e
+  acende cada nota ouvida em todas as casas onde ela pode ser tocada.
 - **Aba Musik player** (karaokê de acordes): você digita "artista música", escolhe
   a versão certa (com a duração) e o app busca a letra com o tempo de cada linha
   no [LRCLIB](https://lrclib.net). Com o MIDI de acordes do Chordify (versão
