@@ -466,7 +466,21 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
       {/* O que está soando agora */}
       <LiveReadout on={on} live={live} onPick={onPick} />
 
-      <canvas ref={canvas} className="mt-3 h-56 w-full rounded-xl bg-black/30 sm:h-64" aria-label="Gráfico da amplitude sonora nos últimos 8 segundos" />
+      <div className="relative mt-3">
+        <canvas ref={canvas} className="h-56 w-full rounded-xl bg-black/30 sm:h-64" aria-label="Gráfico da amplitude sonora nos últimos 8 segundos" />
+        {/* Botão pequeno: prende o gráfico no tempo real (ou volta ao fim da gravação) */}
+        {(on || browsing) && (
+          <button
+            onClick={backToLive}
+            aria-pressed={on && !browsing}
+            title={on ? 'Manter o gráfico em tempo real' : 'Ir para o fim da gravação'}
+            className={`btn btn-round absolute top-1.5 right-1.5 gap-1.5 px-2.5 py-0.5 text-[11px] ${on && !browsing ? 'btn-primary' : ''}`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${on && !browsing ? 'animate-pulse bg-emerald-300' : 'bg-slate-500'}`} aria-hidden />
+            {on ? 'Tempo real' : 'Ir para o fim'}
+          </button>
+        )}
+      </div>
 
       {/* Trilha pequena: o último minuto, com o trecho do gráfico grande destacado */}
       <div className="mt-2">
@@ -487,11 +501,6 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
           <span>{browsing ? 'arraste para escolher o trecho' : '-30 s'}</span>
           <span>{on ? 'agora' : 'fim'}</span>
         </div>
-        {browsing && !replayUrl && (
-          <button onClick={backToLive} className="btn btn-round mt-1 px-3 py-1 text-xs">
-            {on ? '⟳ Voltar ao vivo' : '⇥ Ir para o fim'}
-          </button>
-        )}
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">

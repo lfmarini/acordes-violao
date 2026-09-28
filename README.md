@@ -45,7 +45,8 @@ e no computador.
   por minuto) ou WAV (sem perda, ~6x maior) com os últimos
   10 s, 30 s, 1 min ou a gravação inteira. Uma trilha pequena abaixo do gráfico
   mostra o último minuto: arraste nela para ver outro trecho no gráfico de 8 s
-  (com o replay aberto, o áudio pula para o mesmo ponto e o gráfico acompanha). Com o microfone ligado, o quadro "Tocando agora"
+  (com o replay aberto, o áudio pula para o mesmo ponto e o gráfico acompanha).
+  O botão pequeno "Tempo real", no canto do gráfico, prende o gráfico no agora. Com o microfone ligado, o quadro "Tocando agora"
   identifica a nota (com a afinação em cents) ou o acorde que está soando e
   marca cada troca no gráfico. Dá para ouvir a última gravação no próprio app,
   escolher se o som do metrônomo entra no arquivo e ligar a redução de ruído
