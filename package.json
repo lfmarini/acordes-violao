@@ -1,6 +1,7 @@
 {
   "name": "acordes-violao",
   "private": true,
+  "license": "AGPL-3.0-or-later",
   "version": "0.0.0",
   "type": "module",
   "scripts": {
@@ -12,7 +13,9 @@
     "icones": "node scripts/gerar-icones.mjs",
     "afinacao": "tsx scripts/testar-afinacao.ts",
     "reconhecimento": "tsx scripts/testar-reconhecimento.ts",
-    "ruido": "tsx scripts/testar-ruido.ts"
+    "ruido": "tsx scripts/testar-ruido.ts",
+    "musik": "tsx scripts/testar-musik.ts",
+    "analise": "tsx scripts/testar-analise.ts"
   },
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7",
@@ -21,6 +24,8 @@
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.1",
     "@tombatossals/chords-db": "^0.5.1",
+    "@tonejs/midi": "^2.0.28",
+    "essentia.js": "^0.1.3",
     "framer-motion": "^13.4.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

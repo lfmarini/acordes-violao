@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { chordDisplayName, type ChordRef } from '../lib/chords'
 import { LiveDetector, liveLabel, type LiveResult } from '../lib/liveDetect'
 import { analyzeSpectrum } from '../lib/recognize'
-import { NOISE_LEVELS, createDenoiser, setNoiseLevel, type NoiseLevel } from '../lib/denoise'
-import { MAX_RECORD_MIN, MP3_KBPS, Recorder, downloadBlob } from '../lib/recorder'
+import { NOISE_LEVELS, setNoiseLevel, type NoiseLevel } from '../lib/denoise'
+import { micErrorMessage, openMicrophone, type MicSession } from '../lib/microphone'
+import { MAX_RECORD_MIN, MP3_KBPS, Recorder, downloadBlob, recordingFileName } from '../lib/recorder'
 import { useStoredState } from '../lib/storage'
 import { useTheme } from '../lib/themes'
 
@@ -62,12 +63,8 @@ function sizeLabel(seconds: number, format: Format, sampleRate = 48000) {
   return bytes >= 1e6 ? `${(bytes / 1e6).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(bytes / 1e3))} KB`
 }
 
-function fileName(seconds: number | null, format: Format) {
-  const d = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}h${pad(d.getMinutes())}`
-  return `acordes-gravacao_${stamp}_${seconds ? `${seconds}s` : 'inteira'}.${format}`
-}
+const fileName = (seconds: number | null, format: Format) =>
+  recordingFileName('acordes-gravacao', seconds ? `${seconds}s` : 'inteira', format)
 
 const toDb = (rms: number) => Math.max(DB_FLOOR, 20 * Math.log10(Math.max(rms, 1e-6)))
 
@@ -329,49 +326,24 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
       URL.revokeObjectURL(replayUrl)
       setReplayUrl(null)
     }
-    let stream: MediaStream
+    // Microfone + redução de ruído + gravação (uma nova gravação apaga a anterior).
+    let mic: MicSession
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-      })
+      mic = await openMicrophone(noise)
     } catch (e) {
-      const denied = e instanceof DOMException && (e.name === 'NotAllowedError' || e.name === 'SecurityError')
-      setError(
-        denied
-          ? 'O navegador não liberou o microfone. Clique no cadeado ao lado do endereço do site e permita o microfone.'
-          : 'Não encontrei um microfone neste aparelho.',
-      )
+      setError(micErrorMessage(e))
       return
     }
-    const ctx = new AudioContext()
-    const source = ctx.createMediaStreamSource(stream)
+    const { ctx, input } = mic
+    denoiser.current = mic.denoiser
+    recorder.current = mic.recorder
     const analyser = ctx.createAnalyser() // volume
     analyser.fftSize = 2048
-    // Redução de ruído (se o navegador não suportar, segue sem ela).
-    let input: AudioNode = source
-    try {
-      const den = await createDenoiser(ctx)
-      setNoiseLevel(den, noise)
-      source.connect(den)
-      denoiser.current = den
-      input = den
-    } catch {
-      denoiser.current = null
-    }
     input.connect(analyser)
     const spectrum = ctx.createAnalyser() // notas (precisa de mais resolução)
     spectrum.fftSize = DETECT_FFT
     spectrum.smoothingTimeConstant = 0
     input.connect(spectrum)
-
-    // Grava tudo enquanto o microfone está ligado (uma nova gravação apaga a anterior).
-    const rec = new Recorder()
-    try {
-      await rec.attach(ctx, input)
-      recorder.current = rec
-    } catch {
-      recorder.current = null // sem gravação neste navegador; o gráfico segue funcionando
-    }
     setRecorded(0)
     samples.current = []
     marks.current = []
@@ -431,12 +403,10 @@ export function AmplitudeChart({ beats, active, onPick }: Props) {
 
     stopRef.current = () => {
       cancelAnimationFrame(raf)
-      recorder.current?.detach()
+      mic.close()
       setRecorded(recorder.current?.seconds ?? 0)
       setLive({ kind: 'silence' })
       denoiser.current = null
-      stream.getTracks().forEach((tr) => tr.stop())
-      void ctx.close()
       liveRef.current = false
       setOn(false)
       stopRef.current = () => {}

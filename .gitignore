@@ -27,3 +27,5 @@ dist-ssr
 .env
 .env.*
 .vercel
+# Áudio gerado pelo teste de análise (npm run analise), grande demais para o git
+scripts/exemplo/*.wav

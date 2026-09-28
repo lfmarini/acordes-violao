@@ -51,6 +51,24 @@ e no computador.
   marca cada troca no gráfico. Dá para ouvir a última gravação no próprio app,
   escolher se o som do metrônomo entra no arquivo e ligar a redução de ruído
   (fraca, média ou forte), que tira chiado e barulho constante do ambiente.
+- **Aba Musik player** (karaokê de acordes): você digita "artista música", escolhe
+  a versão certa (com a duração) e o app busca a letra com o tempo de cada linha
+  no [LRCLIB](https://lrclib.net). Com o MIDI de acordes do Chordify (versão
+  *time aligned*), trazido por "Compartilhar → Acordes" no celular, pelo botão
+  "Pegar último MIDI da pasta Downloads" (Chrome/Edge), arrastando ou escolhendo o
+  arquivo, o app monta sozinho a página: tabela de acordes com diagrama (fixa no
+  topo), série de acordes por seção, e a letra em blocos de compasso (acorde, marcas
+  dos tempos e trecho da letra) ou em "letra corrida". Versos e refrão são
+  detectados pelas linhas repetidas; trechos longos sem letra viram INTRO, SOLO e
+  FINAL (só o rótulo, por enquanto). "Editar compassos" corrige acordes e divisões
+  só com toques. O karaokê toca com o vídeo do YouTube (a mesma gravação do
+  Chordify), com os acordes do MIDI em som de violão, com um acompanhamento no BPM
+  escolhido ou só com o metrônomo, com velocidade de 50% a 120%, ajuste fino da letra
+  (±10 s), tap tempo, contagem de entrada e o modo "marcar tempo". Sem MIDI: análise
+  de um arquivo de áudio ou do microfone (Essentia.js, no próprio aparelho; só
+  acordes maiores e menores) ou cifra colada. Dá para gravar tocando junto, ouvir
+  com os blocos andando e baixar em MP3 ou WAV. Tudo fica salvo no aparelho
+  (IndexedDB) e as músicas salvas abrem sem internet (o vídeo precisa de internet).
 - **Tema de cores**: botão "Tema" no topo com 5 paletas (Neon, Madeira,
   Oceano, Daltônico-seguro e Claro). Neon é o padrão e a escolha fica salva.
 - **Favoritos** com estrela e lembrança do último acorde, tudo salvo no navegador.
@@ -62,7 +80,15 @@ Vite, React, TypeScript, Tailwind CSS, [tonal](https://github.com/tonaljs/tonal)
 (formas de acordes, licença MIT), tone.js (som sintetizado), framer-motion
 (animações), three.js com @react-three/fiber e drei (fundo animado) e
 vite-plugin-pwa (modo offline) e [lamejs](https://github.com/breezystack/lamejs)
-(conversão para MP3, licença LGPL).
+(conversão para MP3, licença LGPL), [@tonejs/midi](https://github.com/Tonejs/Midi)
+(leitura do MIDI) e [Essentia.js](https://mtg.github.io/essentia.js/) (análise de
+áudio, licença AGPL-3.0).
+
+## Licença
+
+Por usar o Essentia.js (AGPL-3.0), este projeto é distribuído sob a
+**GNU AGPL-3.0 ou posterior** (arquivo `LICENSE`). O código-fonte fica aberto
+neste repositório, e o app tem um link "código-fonte" no rodapé.
 
 ## Onde mexer
 
@@ -82,6 +108,15 @@ vite-plugin-pwa (modo offline) e [lamejs](https://github.com/breezystack/lamejs)
 | Redução de ruído (níveis fraca/média/forte) | `src/lib/denoise.ts` |
 | Gráfico de amplitude | `src/components/AmplitudeChart.tsx` |
 | Desenho do braço | `src/components/Fretboard.tsx` |
+| Musik player: tela, busca e importação | `src/components/MusikPlayer.tsx` |
+| Musik player: blocos, série e edição | `src/components/SongSheet.tsx` |
+| Busca de letras (LRCLIB) | `src/lib/lrclib.ts` |
+| Leitura do MIDI do Chordify | `src/lib/chordMidi.ts` |
+| Montagem automática (seções, INTRO/SOLO, compassos) | `src/lib/song.ts` |
+| Karaokê (relógio, fontes de som, batidas) | `src/lib/songPlayer.ts` |
+| Análise de áudio (Essentia.js) | `src/lib/essentiaPipeline.ts` |
+| Cifra colada | `src/lib/pasteChords.ts` |
+| Microfone compartilhado | `src/lib/microphone.ts` |
 
 ## Rodando no computador
 
@@ -96,8 +131,10 @@ Outros comandos: `npm run build` (gera a versão final), `npm run testar`
 (confere o tradutor de cifras com uma lista de acordes), `npm run afinacao`
 (mede a frequência do som gerado em cada corda) e `npm run reconhecimento`
 (testa o reconhecedor com acordes sintetizados) e `npm run ruido` (mede
-quanto a redução de ruído tira do chiado e quanto preserva da nota) e `npm run icones`
-(gera os ícones do app).
+quanto a redução de ruído tira do chiado e quanto preserva da nota), `npm run musik`
+(testa a montagem do Musik player com um MIDI e uma letra inventados, em
+`scripts/exemplo/`), `npm run analise` (análise de áudio de verdade com
+Essentia.js num áudio sintetizado) e `npm run icones` (gera os ícones do app).
 
 ## Publicação
 

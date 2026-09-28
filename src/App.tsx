@@ -6,6 +6,7 @@ import { Fretboard } from './components/Fretboard'
 import { CircleOfFifths } from './components/CircleOfFifths'
 import { HarmonicField } from './components/HarmonicField'
 import { Learning } from './components/Learning'
+import { MusikPlayer } from './components/MusikPlayer'
 import { ThemePicker } from './components/ThemePicker'
 import { TheoryPanel } from './components/TheoryPanel'
 import { defaultMode, type Mode } from './lib/harmony'
@@ -22,6 +23,7 @@ const Background3D = lazy(() => import('./three/Background3D'))
 const TABS = [
   { id: 'acordes', label: 'Acordes' },
   { id: 'aprendizado', label: 'Aprendizado' },
+  { id: 'musik', label: 'Musik player' },
 ] as const
 type TabId = (typeof TABS)[number]['id']
 
@@ -46,6 +48,10 @@ export default function App() {
   const [highlight, setHighlight] = useState<number | null>(null)
   const [captureOpen, setCaptureOpen] = useState(false)
   const [tab, setTab] = useStoredState<TabId>('aba', 'acordes')
+  // Aberto pelo "Compartilhar" do celular (MIDI de acordes): vai direto para o Musik player.
+  useEffect(() => {
+    if (new URLSearchParams(location.search).has('compartilhado')) setTab('musik')
+  }, [setTab])
   // Tonalidade do campo harmônico: segue o acorde, mas pode ser trocada à mão.
   const [modeOverride, setModeOverride] = useState<Mode | null>(null)
   const [plucked, setPlucked] = useState<Record<number, number>>({})
@@ -169,7 +175,7 @@ export default function App() {
               role="tab"
               aria-selected={tab === t.id}
               onClick={() => setTab(t.id)}
-              className={`flex-1 rounded-full px-5 py-2 font-semibold transition sm:flex-none ${
+              className={`flex-1 rounded-full px-2 py-2 font-semibold whitespace-nowrap transition sm:flex-none sm:px-5 ${
                 tab === t.id ? 'bg-accent text-[#fff] shadow-lg shadow-accent/30' : 'text-slate-400 hover:text-white'
               }`}
             >
@@ -365,6 +371,19 @@ export default function App() {
             }}
           />
         </div>
+
+        <div hidden={tab !== 'musik'}>
+          <MusikPlayer active={tab === 'musik'} />
+        </div>
+
+        {/* Licença AGPL-3.0 (exigida pelo Essentia.js): o código-fonte fica aberto. */}
+        <footer className={`mt-auto pt-6 text-center text-xs text-slate-500 ${tab === 'musik' ? 'pb-36' : ''}`}>
+          Software livre (AGPL-3.0) ·{' '}
+          <a href="https://github.com/lfmarini/acordes-violao" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-300">
+            código-fonte
+          </a>{' '}
+          · letras do LRCLIB · análise de áudio com Essentia.js
+        </footer>
       </div>
     </MotionConfig>
   )

@@ -189,6 +189,20 @@ export class Recorder {
   }
 }
 
+/** Nome do arquivo de gravação: prefixo, data e hora, e um detalhe (ex.: "30s", "inteira"). */
+export function recordingFileName(prefix: string, detail: string, ext: 'mp3' | 'wav') {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}h${pad(d.getMinutes())}`
+  const safe = prefix
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^\w-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase()
+  return `${safe}_${stamp}_${detail}.${ext}`
+}
+
 export function downloadBlob(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')

@@ -2,6 +2,7 @@ import { Note } from 'tonal'
 import * as Tone from 'tone'
 import type { Shape } from './chords'
 import { synthPluck } from './ks'
+import { readStored } from './storage'
 import { noteAt } from './theory'
 
 // ---------------------------------------------------------------------------
@@ -35,19 +36,24 @@ let voices: (Tone.ToneBufferSource | null)[] = [null, null, null, null, null, nu
 let timers: number[] = []
 const cache = new Map<string, Tone.ToneAudioBuffer>()
 
-function setup() {
-  if (volume) return
-  volume = new Tone.Volume(0).toDestination()
-  bus = new Tone.Gain(0).connect(volume)
-  // Corpo do violão: ressonância grave da caixa (~100 Hz), "calor" (~220 Hz),
-  // presença (~3 kHz) e corte dos agudos ásperos. Um reverb curto de sala.
-  const room = new Tone.Freeverb({ roomSize: 0.5, dampening: 3000, wet: 0.14 }).connect(bus)
+// Corpo do violão: ressonância grave da caixa (~100 Hz), "calor" (~220 Hz),
+// presença (~3 kHz) e corte dos agudos ásperos. Um reverb curto de sala.
+// Devolve a entrada da cadeia (onde as cordas são ligadas).
+function makeBody(out: Tone.InputNode) {
+  const room = new Tone.Freeverb({ roomSize: 0.5, dampening: 3000, wet: 0.14 }).connect(out)
   const air = new Tone.Filter({ type: 'lowpass', frequency: 7000, Q: 0.5 }).connect(room)
   const presence = new Tone.Filter({ type: 'peaking', frequency: 3000, Q: 0.9, gain: 2 }).connect(air)
   const warmth = new Tone.Filter({ type: 'peaking', frequency: 220, Q: 1.4, gain: 2.5 }).connect(presence)
   const box = new Tone.Filter({ type: 'peaking', frequency: 105, Q: 1.8, gain: 4 }).connect(warmth)
   const rumble = new Tone.Filter({ type: 'highpass', frequency: 70, Q: 0.7 }).connect(box)
-  body = new Tone.Gain(0.32).connect(rumble)
+  return new Tone.Gain(0.32).connect(rumble)
+}
+
+function setup() {
+  if (volume) return
+  volume = new Tone.Volume(0).toDestination()
+  bus = new Tone.Gain(0).connect(volume)
+  body = makeBody(bus)
 }
 
 // Gera (uma vez) e guarda o som de cada nota em cada corda.
@@ -126,4 +132,65 @@ export function playShape(
   gain.exponentialRampToValueAtTime(0.0001, end)
   gain.setValueAtTime(0, end + 0.01)
   voices.forEach((v) => v?.stop(end + 0.05))
+}
+
+// ---------------------------------------------------------------------------
+// Acompanhamento do Musik player: vários ataques agendados no relógio do
+// áudio, um atrás do outro. Usa um caminho próprio (com o mesmo "corpo" de
+// violão), para o botão de play da aba Acordes não cortar o acompanhamento.
+// ---------------------------------------------------------------------------
+
+let songBody: Tone.Gain | null = null
+let songVoices: Tone.ToneBufferSource[] = []
+
+/** Relógio do áudio (s), o mesmo usado por strumAt. */
+export const audioNow = () => Tone.getContext().currentTime
+
+/** Libera o áudio e aplica o volume da aba Acordes. Chamar dentro do clique. */
+export async function startSongAudio() {
+  await Tone.start()
+  setup()
+  songBody ??= makeBody(volume!)
+  setVolume(readStored('volume', 0.8), readStored('mudo', false))
+}
+
+/**
+ * Agenda um ataque do acorde no instante `when` (relógio do áudio). Para
+ * baixo: da 6ª para a 1ª corda; para cima: só as 4 cordas mais agudas, da 1ª
+ * para baixo, mais fraco. O som anterior é abafado no mesmo instante.
+ */
+export function strumAt(shape: Shape, when: number, opts: { up?: boolean; velocity?: number; strumMs?: number } = {}) {
+  if (!songBody) return
+  const strumMs = opts.strumMs ?? (opts.up ? 12 : 18)
+  const velocity = opts.velocity ?? (opts.up ? 0.55 : 0.9)
+  songVoices = songVoices.filter((v) => {
+    v.stop(when + 0.01)
+    return false
+  })
+  const strings = shape.frets.map((fret, s) => ({ fret, s })).filter((x) => x.fret >= 0)
+  const order = opts.up ? strings.reverse().slice(0, 4) : strings
+  order.forEach(({ fret, s }, k) => {
+    const src = new Tone.ToneBufferSource(bufferFor(s, noteAt(s, fret), fret)).connect(songBody!)
+    src.fadeOut = 0.06
+    src.start(when + (k * strumMs) / 1000, 0, undefined, velocity * (0.9 + Math.random() * 0.1))
+    songVoices.push(src)
+  })
+}
+
+/** Cala na hora tudo o que o acompanhamento agendou. */
+export function stopSongAudio() {
+  const now = Tone.getContext().currentTime
+  songVoices.forEach((v) => v.stop(now + 0.02))
+  songVoices = []
+}
+
+/** Toca a forma com o volume, o mudo e a velocidade do ataque escolhidos na aba Acordes. */
+export function playShapeWithPrefs(shape: Shape, onPluck: (stringIndex: number) => void = () => {}) {
+  playShape(
+    shape,
+    readStored('volume', 0.8),
+    readStored('mudo', false),
+    readStored('velocidade-ataque', STRUM_DELAY_MS),
+    onPluck,
+  )
 }

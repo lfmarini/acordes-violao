@@ -84,18 +84,32 @@ export class Metronome {
     }
   }
 
-  // Clique curto: um "tic" agudo no 1º tempo do compasso e um mais grave nos outros.
   private click(time: number, accent: boolean) {
-    const ctx = this.ctx!
-    const osc = ctx.createOscillator()
-    const env = ctx.createGain()
-    osc.type = 'triangle'
-    osc.frequency.value = accent ? 1760 : 1100
-    env.gain.setValueAtTime(0.0001, time)
-    env.gain.exponentialRampToValueAtTime(accent ? 1 : 0.6, time + 0.002)
-    env.gain.exponentialRampToValueAtTime(0.0001, time + 0.06)
-    osc.connect(env).connect(this.out!)
-    osc.start(time)
-    osc.stop(time + 0.07)
+    scheduleClick(this.ctx!, this.out!, time, accent)
   }
+}
+
+/** Clique curto no instante `time`: um "tic" agudo no 1º tempo do compasso e um mais grave nos outros. */
+export function scheduleClick(ctx: BaseAudioContext, out: AudioNode, time: number, accent: boolean, level = 1) {
+  const osc = ctx.createOscillator()
+  const env = ctx.createGain()
+  osc.type = 'triangle'
+  osc.frequency.value = accent ? 1760 : 1100
+  env.gain.setValueAtTime(0.0001, time)
+  env.gain.exponentialRampToValueAtTime(Math.max(0.0002, (accent ? 1 : 0.6) * level), time + 0.002)
+  env.gain.exponentialRampToValueAtTime(0.0001, time + 0.06)
+  osc.connect(env).connect(out)
+  osc.start(time)
+  osc.stop(time + 0.07)
+}
+
+/**
+ * "Bater o tempo": guarda o toque e devolve o BPM pela média dos intervalos
+ * dos últimos toques (até 6, esquecendo os de mais de 3 s atrás).
+ */
+export function tapTempo(taps: number[], now = performance.now()): { taps: number[]; bpm: number | null } {
+  const next = [...taps.filter((t) => now - t < 3000), now].slice(-6)
+  if (next.length < 2) return { taps: next, bpm: null }
+  const avg = (next[next.length - 1] - next[0]) / (next.length - 1)
+  return { taps: next, bpm: 60000 / avg }
 }

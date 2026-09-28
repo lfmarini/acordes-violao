@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
-import { BPM_DEFAULT, BPM_MAX, BPM_MIN, Metronome, tempoName } from '../lib/metronome'
+import { BPM_DEFAULT, BPM_MAX, BPM_MIN, Metronome, tapTempo, tempoName } from '../lib/metronome'
 import { useStoredState } from '../lib/storage'
 
 interface Props {
@@ -61,12 +61,9 @@ export function MetronomePanel({ onBeat, active }: Props) {
 
   // "Bater o tempo": a média dos intervalos entre os toques vira o BPM.
   const tap = () => {
-    const now = performance.now()
-    taps.current = [...taps.current.filter((t) => now - t < 3000), now].slice(-6)
-    const t = taps.current
-    if (t.length < 2) return
-    const avg = (t[t.length - 1] - t[0]) / (t.length - 1)
-    setBpm(clampBpm(60000 / avg))
+    const r = tapTempo(taps.current)
+    taps.current = r.taps
+    if (r.bpm) setBpm(clampBpm(r.bpm))
   }
 
   // Barra de espaço liga/desliga, só com esta aba aberta e fora de campos e botões.

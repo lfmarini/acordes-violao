@@ -91,17 +91,21 @@ export type Quality = (typeof QUALITIES)[number]
 
 // "Impressão digital" de um acorde: os semitons de cada intervalo a partir da
 // tônica. Serve para reconhecer que "C7M", "Cmaj7" e "CM7" são o mesmo acorde.
-function fingerprint(intervals: string[]) {
-  return [...new Set(intervals.map((i) => ((Interval.semitones(i) ?? 0) % 12 + 12) % 12))]
-    .sort((a, b) => a - b)
-    .join(',')
+function fingerprint(semitones: number[]) {
+  return [...new Set(semitones.map((s) => ((s % 12) + 12) % 12))].sort((a, b) => a - b).join(',')
 }
+const semitonesOf = (intervals: string[]) => intervals.map((i) => Interval.semitones(i) ?? 0)
 const QUALITY_BY_PRINT = new Map(
-  QUALITIES.map((q) => [fingerprint(Chord.get('C' + q.tonal).intervals), q] as const),
+  QUALITIES.map((q) => [fingerprint(semitonesOf(Chord.get('C' + q.tonal).intervals)), q] as const),
 )
 
 export function qualityOfTonalChord(intervals: string[]): Quality | undefined {
-  return QUALITY_BY_PRINT.get(fingerprint(intervals))
+  return QUALITY_BY_PRINT.get(fingerprint(semitonesOf(intervals)))
+}
+
+/** Qualidade cujas notas, a partir da tônica, são exatamente estes semitons (0 = tônica). */
+export function qualityOfSemitones(semitones: number[]): Quality | undefined {
+  return QUALITY_BY_PRINT.get(fingerprint(semitones))
 }
 
 export interface ChordRef {

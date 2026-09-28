@@ -25,8 +25,24 @@ export default defineConfig({
           { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
           { src: 'maskable-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
+        // "Compartilhar → Acordes" no celular: recebe o MIDI do Chordify (ou um
+        // áudio). Quem trata o envio é public/compartilhar-sw.js.
+        share_target: {
+          action: '/compartilhar',
+          method: 'POST',
+          enctype: 'multipart/form-data',
+          params: {
+            files: [
+              {
+                name: 'arquivo',
+                accept: ['audio/midi', 'audio/mid', 'audio/x-midi', 'application/x-midi', '.mid', '.midi', 'audio/*'],
+              },
+            ],
+          },
+        },
       },
       workbox: {
+        importScripts: ['compartilhar-sw.js'],
         // Guarda TUDO (inclusive a parte 3D e o som, que é sintetizado) para
         // o app funcionar sem internet. As fontes não-latinas ficam de fora.
         globPatterns: ['**/*.{js,css,html,svg,png,ico}', '**/*latin*.woff2'],
