@@ -141,7 +141,7 @@ export default function App() {
             <h1 className="font-display text-2xl font-bold tracking-tight sm:text-3xl">
               Acordes <span className="text-accent-2">Violão</span>
             </h1>
-            <Signature className="text-xs" />
+            <Signature className="-mt-1 mb-0.5 block text-sm leading-relaxed" />
             <p className="text-sm text-slate-400">Forma no braço, teoria de cada grau e som.</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -402,13 +402,13 @@ function strumToSlider(ms: number) {
   return Math.round((100 * Math.log(ms / STRUM_MIN_MS)) / Math.log(STRUM_MAX_MS / STRUM_MIN_MS))
 }
 
-// Assinatura: "por LFMARINI", com LFMARINI na fonte neon (Monoton) e nas cores de destaque do tema.
+// Assinatura: "por LFMarini", em letra cursiva (Great Vibes) com as cores de destaque do tema.
 function Signature({ className = '' }: { className?: string }) {
   return (
     <span className={`text-slate-400 ${className}`}>
       por{' '}
-      <span className="bg-gradient-to-r from-accent to-accent-2 bg-clip-text font-signature text-[1.35em] tracking-wider text-transparent">
-        LFMARINI
+      <span className="bg-gradient-to-r from-accent to-accent-2 bg-clip-text px-0.5 font-signature text-[1.9em] leading-none text-transparent">
+        LFMarini
       </span>
     </span>
   )

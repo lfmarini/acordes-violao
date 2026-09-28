@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { chordDisplayName, type ChordRef } from '../lib/chords'
 import { LIVE_GATE_DB, LiveDetector, liveLabel, type LiveResult } from '../lib/liveDetect'
-import { analyzeSpectrum, type Frame } from '../lib/recognize'
+import { analyzeSpectrum } from '../lib/recognize'
+import { pickNotes } from '../lib/liveNotes'
 import { NOISE_LEVELS, setNoiseLevel, type NoiseLevel } from '../lib/denoise'
 import { micErrorMessage, openMicrophone, type MicSession } from '../lib/microphone'
 import { MAX_RECORD_MIN, MP3_KBPS, Recorder, downloadBlob, recordingFileName } from '../lib/recorder'
@@ -70,19 +71,6 @@ function sizeLabel(seconds: number, format: Format, sampleRate = 48000) {
 const fileName = (seconds: number | null, format: Format) =>
   recordingFileName('acordes-gravacao', seconds ? `${seconds}s` : 'inteira', format)
 
-// Notas tocadas (com a oitava) num quadro de análise: as fundamentais fortes
-// e bem afinadas (até 30 cents de uma nota da escala), entre E2 e ~E6.
-function notesOf(frame: Frame): number[] {
-  const strongest = Math.max(0, ...frame.fundamentals.map((n) => n.strength))
-  const out = new Set<number>()
-  for (const n of frame.fundamentals) {
-    if (n.strength < strongest * 0.45 || n.f < 75 || n.f > 1400) continue
-    const midi = 69 + 12 * Math.log2(n.f / 440)
-    if (Math.abs(midi - Math.round(midi)) <= 0.3) out.add(Math.round(midi))
-  }
-  return [...out]
-}
-
 const toDb = (rms: number) => Math.max(DB_FLOOR, 20 * Math.log10(Math.max(rms, 1e-6)))
 
 // Ajusta o canvas à tela (nitidez em telas de alta densidade, limitada a 2x).
@@ -111,6 +99,7 @@ export function AmplitudeChart({ beats, active, onPick, onNotes, beforeSave }: P
   const samples = useRef<{ t: number; db: number }[]>([])
   const marks = useRef<{ t: number; label: string }[]>([]) // trocas de nota/acorde
   const stopRef = useRef<() => void>(() => {})
+  const beforeSaveRef = useRef<HTMLDivElement>(null)
   const [on, setOn] = useState(false)
   const [error, setError] = useState('')
   const [level, setLevel] = useState({ now: DB_FLOOR, peak: DB_FLOOR })
@@ -398,7 +387,8 @@ export function AmplitudeChart({ beats, active, onPick, onNotes, beforeSave }: P
         for (let i = 0; i < dbSpec.length; i++) mag[i] = Math.pow(10, dbSpec[i] / 20)
         const frame = analyzeSpectrum(mag, ctx.sampleRate, DETECT_FFT)
         const result = detector.update(frame, db, dt)
-        const now = db >= LIVE_GATE_DB ? notesOf(frame) : []
+        // Notas para o violão virtual: só as que o "Tocando agora" confirma, sem harmônicos.
+        const now = db >= LIVE_GATE_DB ? pickNotes(frame, result) : []
         // Só vale a nota que aparece em duas análises seguidas (evita "piscadas" no ataque).
         onNotesRef.current?.(now.filter((m) => prevNotes.has(m)), result)
         prevNotes = new Set(now)
@@ -427,6 +417,8 @@ export function AmplitudeChart({ beats, active, onPick, onNotes, beforeSave }: P
     cursorRef.current = null
     setBrowsing(false)
     setOn(true)
+    // Microfone ligado: rola a página até o violão virtual, onde as notas vão acender.
+    beforeSaveRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
     stopRef.current = () => {
       cancelAnimationFrame(raf)
@@ -526,7 +518,11 @@ export function AmplitudeChart({ beats, active, onPick, onNotes, beforeSave }: P
       {error && <p className="mt-2 text-sm text-rose-300">{error}</p>}
 
       {/* Espaço antes de "Salvar gravação" (a aba Aprendizado põe o violão virtual aqui) */}
-      {beforeSave}
+      {beforeSave && (
+        <div ref={beforeSaveRef} className="scroll-mt-4">
+          {beforeSave}
+        </div>
+      )}
 
       {/* Salvar a gravação no aparelho, em MP3 (pequeno) ou WAV (sem perda) */}
       <div className="mt-4 rounded-xl border border-line bg-black/20 p-3">
