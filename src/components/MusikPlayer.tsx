@@ -40,7 +40,8 @@ export function MusikPlayer({ active }: { active: boolean }) {
   const [pending, setPending] = useState<Pending | null>(null)
   const [dragging, setDragging] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
-  const sheet = useMemo(() => (song ? (song.sheet ?? assemble(song)) : null), [song])
+  // Sempre remonta ao abrir: assim melhorias na montagem valem também para as músicas já salvas.
+  const sheet = useMemo(() => (song ? assemble(song) : null), [song])
 
   // --- Karaokê ------------------------------------------------------------------
   const [player] = useState(() => new SongPlayer())

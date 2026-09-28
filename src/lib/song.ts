@@ -134,7 +134,7 @@ function buildMeasures(song: Song): { measures: Measure[]; beatsPerBar: number; 
   const starts: number[] = shift ? [0] : [] // anacruse: compasso incompleto antes do 1º tempo
   for (let i = shift; i < beats.length; i += beatsPerBar) starts.push(i)
 
-  const events = t?.chords ?? []
+  const events = tidyEvents(t?.chords ?? [])
   const measures = starts.map((b0, index): Measure => {
     const b1 = index + 1 < starts.length ? starts[index + 1] : Math.min(beats.length, b0 + beatsPerBar)
     const mb = beats.slice(b0, b1)
@@ -173,8 +173,29 @@ function chordsIn(events: ChordEvent[], beats: number[], end: number): MeasureCh
     if (same) same.chord = e.chord
     else out.push({ beat, chord: e.chord })
   }
-  // Tira repetições seguidas (o mesmo acorde "reentrando").
+  // Tira repetições seguidas (o mesmo acorde "reentrando" no compasso).
+  out.sort((a, b) => a.beat - b.beat)
   return out.filter((c, i) => i === 0 || !sameChord(c.chord, out[i - 1].chord))
+}
+
+/** Silêncio mais curto que isto (s) entre acordes não é "sem acorde": o acorde anterior continua. */
+const SHORT_GAP_S = 1
+
+/**
+ * Arruma a marcação antes de dividir em compassos: muitos MIDIs tocam o
+ * acorde curtinho em cada tempo, com silêncio entre os toques. Esses
+ * silêncios curtos são juntados ao acorde anterior e o mesmo acorde seguido
+ * vira um só, para não aparecer "G — G —" dentro do compasso.
+ */
+export function tidyEvents(events: ChordEvent[]): ChordEvent[] {
+  const out: ChordEvent[] = []
+  for (const e of events) {
+    const last = out[out.length - 1]
+    if (last && !e.chord && e.end - e.start < SHORT_GAP_S) last.end = e.end
+    else if (last && sameChord(last.chord, e.chord)) last.end = e.end
+    else out.push({ ...e })
+  }
+  return out
 }
 
 const syllables = (word: string) => Math.max(1, (word.toLowerCase().match(/[aeiouyáéíóúâêôãõàü]+/g) ?? []).length)

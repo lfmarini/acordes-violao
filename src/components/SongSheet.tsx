@@ -312,8 +312,9 @@ function MeasureBlock({ m, beatsPerBar, now, editing, selected, onSelect }: Bloc
             : 'border-line bg-panel/70'
       } ${editing ? 'hover:border-accent' : 'hover:border-slate-500'} ${n < beatsPerBar ? 'opacity-80' : ''}`}
     >
-      {/* Acordes, cada um na posição do tempo em que entra */}
-      <div className="grid h-8 items-end" style={cols}>
+      {/* Acordes. Computador: cada um na coluna do tempo em que entra.
+          Celular: lado a lado, com o número do tempo em que o 2º acorde entra. */}
+      <div className="flex h-8 items-end gap-2 sm:grid sm:gap-0" style={cols}>
         {m.chords.map((c, k) => (
           <span
             key={k}
@@ -321,18 +322,20 @@ function MeasureBlock({ m, beatsPerBar, now, editing, selected, onSelect }: Bloc
             className={`font-display text-2xl leading-none font-bold whitespace-nowrap ${on ? 'text-white' : 'text-slate-100'}`}
           >
             {songChordName(c.chord)}
+            {c.beat > 0 && <sup className="ml-0.5 text-[10px] font-semibold text-accent-2 sm:hidden">{c.beat + 1}</sup>}
             {m.edited && k === 0 && <span className="ml-0.5 align-top text-[10px] text-amber-300">✎</span>}
           </span>
         ))}
       </div>
-      {/* Marcas dos tempos */}
-      <div className="grid" style={cols} aria-hidden>
+      {/* Marcas dos tempos: agrupadas no celular, uma por coluna no computador.
+          O anel marca o tempo em que um acorde novo entra no meio do compasso. */}
+      <div className="flex items-center gap-1.5 sm:grid sm:gap-0" style={cols} aria-hidden>
         {m.beats.map((_, b) => (
           <span
             key={b}
             className={`h-2 w-2 rounded-full transition ${
               on && now!.beat === b ? 'scale-150 bg-accent-2' : on && now!.beat > b ? 'bg-accent-2/60' : b === 0 ? 'bg-slate-400' : 'bg-slate-600'
-            }`}
+            } ${b > 0 && m.chords.some((c) => c.beat === b) ? 'ring-2 ring-accent-2/70 ring-offset-1 ring-offset-transparent' : ''}`}
           />
         ))}
       </div>

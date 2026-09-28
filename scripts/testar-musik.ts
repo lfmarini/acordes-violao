@@ -157,5 +157,26 @@ sil.fill(0.3, 44100)
 const trimmed = trimLeadingSilence(sil)
 check(Math.abs(trimmed.trimmed - 0.95) < 0.06, `tira o silêncio do começo da gravação (${trimmed.trimmed.toFixed(2)} s)`)
 
+// --- Acorde repetido em cada tempo (MIDI que toca o acorde curtinho a cada batida) ---
+console.log('\n— acorde repetido no compasso —')
+{
+  const beat = 0.6
+  const beats = Array.from({ length: 17 }, (_, i) => i * beat)
+  const G = { root: 'G', q: 'maior' }
+  const D = { root: 'D', q: 'maior' }
+  // G nos 4 tempos do 1º compasso e D nos 4 do 2º, cada toque com metade do tempo e silêncio depois.
+  const chords = beats.slice(0, 8).flatMap((b, i) => [
+    { start: b, end: b + beat / 2, chord: i < 4 ? G : D },
+    { start: b + beat / 2, end: b + beat, chord: null },
+  ])
+  const stac = assemble({
+    ...newSong({ id: 's', title: '', artist: '', album: '', duration: 10, lyrics: [], synced: false }),
+    track: { chords, beats, beatsPerBar: 4, beatUnit: 4, bpm: 100, key: track.key, duration: 10, downbeat: 0 },
+  })
+  const shownIn = (i: number) => stac.measures[i].chords.map((c) => `${songChordName(c.chord)}@${c.beat + 1}`).join(' ')
+  check(stac.measures[0].chords.length === 1, `compasso de G tocado em cada tempo mostra o acorde uma vez só: ${shownIn(0)}`)
+  check(shownIn(1) === 'D@1', `troca para D no 1º tempo do compasso seguinte: ${shownIn(1)}`)
+}
+
 console.log(fails ? `\n${fails} teste(s) falharam.` : '\nTudo certo.')
 process.exit(fails ? 1 : 0)
