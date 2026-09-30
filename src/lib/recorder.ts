@@ -16,12 +16,14 @@ export const MP3_KBPS = 128
 
 const WORKLET = `
 class Capture extends AudioWorkletProcessor {
-  constructor() { super(); this.buf = new Float32Array(4096); this.n = 0 }
+  constructor() { super(); this.buf = new Float32Array(4096); this.n = 0; this.t0 = 0 }
   process(inputs) {
     const ch = inputs[0] && inputs[0][0]
     if (ch) for (let i = 0; i < ch.length; i++) {
+      // Horário (no relógio do áudio) da 1ª amostra do bloco.
+      if (this.n === 0) this.t0 = currentTime + i / sampleRate
       this.buf[this.n++] = ch[i]
-      if (this.n === this.buf.length) { this.port.postMessage(this.buf.slice()); this.n = 0 }
+      if (this.n === this.buf.length) { this.port.postMessage({ buf: this.buf.slice(), t0: this.t0 }); this.n = 0 }
     }
     return true
   }
@@ -42,12 +44,18 @@ export class Recorder {
   private length = 0 // amostras guardadas agora
   private total = 0 // amostras recebidas desde o início (inclui as descartadas)
   private startPerf = 0 // horário (performance.now) da primeira amostra
+  private startCtx = 0 // horário (relógio do áudio, s) da primeira amostra
   sampleRate = 48000
   private node: AudioWorkletNode | null = null
 
   /** Horário (performance.now) da 1ª amostra ainda guardada: o início do replay. */
   get startTime() {
     return this.startPerf + ((this.total - this.length) / this.sampleRate) * 1000
+  }
+
+  /** Horário no relógio do áudio (s) da 1ª amostra ainda guardada. */
+  get startCtxTime() {
+    return this.startCtx + (this.total - this.length) / this.sampleRate
   }
 
   /** Segundos gravados até agora. */
@@ -60,6 +68,7 @@ export class Recorder {
     this.length = 0
     this.total = 0
     this.startPerf = 0
+    this.startCtx = 0
     this.sampleRate = ctx.sampleRate
     const url = URL.createObjectURL(new Blob([WORKLET], { type: 'application/javascript' }))
     try {
@@ -68,7 +77,7 @@ export class Recorder {
       URL.revokeObjectURL(url)
     }
     const node = new AudioWorkletNode(ctx, 'capture', { numberOfInputs: 1, numberOfOutputs: 1 })
-    node.port.onmessage = (e: MessageEvent<Float32Array>) => this.push(e.data)
+    node.port.onmessage = (e: MessageEvent<{ buf: Float32Array; t0: number }>) => this.push(e.data.buf, e.data.t0)
     // Ligado a uma saída muda: alguns navegadores só processam o que chega na saída.
     const mute = ctx.createGain()
     mute.gain.value = 0
@@ -82,9 +91,12 @@ export class Recorder {
     this.node = null
   }
 
-  private push(block: Float32Array) {
+  private push(block: Float32Array, t0: number) {
     // A primeira amostra do bloco soou há "tamanho do bloco" segundos.
-    if (this.total === 0) this.startPerf = performance.now() - (block.length / this.sampleRate) * 1000
+    if (this.total === 0) {
+      this.startPerf = performance.now() - (block.length / this.sampleRate) * 1000
+      this.startCtx = t0
+    }
     this.total += block.length
     const pcm = new Int16Array(block.length)
     for (let i = 0; i < block.length; i++) {
@@ -95,6 +107,17 @@ export class Recorder {
     this.length += pcm.length
     const max = MAX_RECORD_MIN * 60 * this.sampleRate
     while (this.length - this.chunks[0].length > max) this.length -= this.chunks.shift()!.length
+  }
+
+  /** A gravação inteira como números de −1 a 1 (para a análise do ritmo). */
+  floatSamples(): Float32Array {
+    const out = new Float32Array(this.length)
+    let pos = 0
+    for (const c of this.chunks) {
+      for (let i = 0; i < c.length; i++) out[pos + i] = c[i] / 0x8000
+      pos += c.length
+    }
+    return out
   }
 
   /** Os últimos `seconds` segundos gravados (ou tudo, se omitido), em 16 bits. */

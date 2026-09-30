@@ -18,7 +18,8 @@
     "analise": "tsx scripts/testar-analise.ts",
     "tab": "tsx scripts/testar-tab.ts",
     "violao": "tsx scripts/testar-violao-virtual.ts",
-    "verificar": "tsx scripts/verificar-acordes.ts"
+    "verificar": "tsx scripts/verificar-acordes.ts",
+    "ritmo": "tsx scripts/testar-ritmo.ts"
   },
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7",
