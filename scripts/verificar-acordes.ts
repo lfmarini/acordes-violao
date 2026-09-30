@@ -36,6 +36,8 @@ function check(shape: Shape, tonalName: string) {
     if (heard.has(p) || OPTIONAL.has(iv)) continue
     // Nos acordes de 13ª, a 9ª e a 11ª costumam ser omitidas.
     if (/^13/.test(chord.aliases[0] ?? '') && (iv === '9M' || iv === '11P')) continue
+    // Sem a tônica é uma posição de jazz válida: o app marca "sem tônica" e não conta como erro.
+    if (iv === '1P' && shape.rootless) continue
     problems.push(`FALTA: ${Note.pitchClass(chord.notes[[...want.keys()].indexOf(p)])} (${iv})`)
   }
 

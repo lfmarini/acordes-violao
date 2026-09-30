@@ -52,6 +52,7 @@ export function VariationsBar({ shapes, active, analysis, lefty, onSelect }: Pro
             <Fretboard shape={s} analysis={analysis} lefty={lefty} mini className="w-full" />
             <span className={`mt-1 text-xs font-medium ${i === active ? 'text-accent-2' : 'text-slate-300'}`}>
               {s.label}
+              {s.rootless && <span className="block text-[9px] font-normal text-amber-300">sem tônica</span>}
             </span>
           </button>
         ))}

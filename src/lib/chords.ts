@@ -1,5 +1,6 @@
 import guitar from '@tombatossals/chords-db/lib/guitar.json'
 import { Chord, Interval, Note } from 'tonal'
+import { ADDED, REMOVED, shapeKey, type ExtraShape } from './chordFixes'
 
 // ---------------------------------------------------------------------------
 // Banco de formas: @tombatossals/chords-db (licença MIT).
@@ -39,6 +40,8 @@ export interface Shape {
   barres: Barre[]
   baseFret: number // primeira casa mostrada na janela do diagrama
   isOpen: boolean
+  /** A tônica não soa (posição de jazz, pensada para tocar com baixista). */
+  rootless?: boolean
   label: string // "Aberto", "3ª casa"...
 }
 
@@ -139,6 +142,14 @@ function toShape(p: DbPosition): Omit<Shape, 'label'> {
 // recebe o dedo mais baixo, a mais alta o mais alto. Só sugerimos quando cabe
 // em 4 dedos sem pestana; caso contrário, os círculos ficam sem número
 // (melhor não mostrar do que ensinar uma digitação errada).
+// Forma acrescentada à mão -> mesmo formato das formas do banco.
+function fromExtra(x: ExtraShape): Omit<Shape, 'label'> {
+  const pressed = x.frets.filter((f) => f > 0)
+  const baseFret = !pressed.length || Math.max(...pressed) <= 4 ? 1 : Math.min(...pressed)
+  const isOpen = baseFret === 1 && x.frets.some((f) => f === 0)
+  return { frets: [...x.frets], fingers: [...x.fingers], barres: x.barres, baseFret, isOpen }
+}
+
 function suggestFingers(frets: number[]) {
   const pressed = frets.filter((f) => f > 0)
   const distinct = [...new Set(pressed)].sort((a, b) => a - b)
@@ -157,6 +168,11 @@ function suggestFingers(frets: number[]) {
   })
 }
 
+// Alguma corda tocada soa a nota com esse chroma (0 = C ... 11 = B)?
+function soundsChroma(frets: number[], chroma: number) {
+  return frets.some((f, s) => f >= 0 && (Note.midi(OPEN_STRINGS[s])! + f) % 12 === chroma)
+}
+
 function positionLabel(s: Omit<Shape, 'label'>) {
   if (s.isOpen) return 'Aberto'
   const pressed = s.frets.filter((f) => f > 0)
@@ -173,10 +189,15 @@ export function shapesFor(ref: ChordRef): Shape[] {
     const pressed = s.frets.filter((f) => f > 0)
     return pressed.length ? Math.min(...pressed) : 0
   }
-  return entry.positions
-    .map(toShape)
+  // Correções verificadas (ver chordFixes.ts): tira as formas erradas do
+  // banco e acrescenta formas-padrão onde faltava.
+  const key = DB_KEYS[chroma]
+  const fromDb = entry.positions.map(toShape).filter((s) => !REMOVED.has(shapeKey(key, entry.suffix, s.frets)))
+  const known = new Set(fromDb.map((s) => s.frets.join(',')))
+  const extra = (ADDED[key]?.[entry.suffix] ?? []).filter((x) => !known.has(x.frets.join(','))).map(fromExtra)
+  return [...fromDb, ...extra]
     .sort((a, b) => Number(b.isOpen) - Number(a.isOpen) || lowest(a) - lowest(b))
-    .map((s) => ({ ...s, label: positionLabel(s) }))
+    .map((s) => ({ ...s, label: positionLabel(s), rootless: !soundsChroma(s.frets, chroma) }))
     .map((s, _, all) => {
       // Duas formas na mesma posição: numeramos para diferenciar.
       const same = all.filter((o) => o.label === s.label)

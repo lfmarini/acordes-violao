@@ -239,6 +239,7 @@ export default function App() {
                 </div>
                 <p className="truncate text-sm text-slate-400">
                   {chord.quality.name} · {shape?.label ?? '—'}
+                  {shape?.rootless && ' · sem tônica'}
                 </p>
               </div>
               <button
