@@ -1,3 +1,4 @@
+import { Note } from 'tonal'
 import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react'
 import { ChordCapture } from './components/ChordCapture'
@@ -12,7 +13,7 @@ import { TheoryPanel } from './components/TheoryPanel'
 import { defaultMode, type Mode } from './lib/harmony'
 import { VariationsBar } from './components/VariationsBar'
 import { STRUM_DELAY_MS, STRUM_MAX_MS, STRUM_MIN_MS, playShape, setVolume } from './lib/audio'
-import { QUALITIES, chordDisplayName, shapesFor, type ChordRef } from './lib/chords'
+import { INVERSION_NAMES, QUALITIES, chordDisplayName, inversionShapesFor, qualitiesFor, shapesFor, type ChordFilter, type ChordRef } from './lib/chords'
 import { useStoredState } from './lib/storage'
 import { DEGREES, analyze, type DegreeId } from './lib/theory'
 import { useTheme } from './lib/themes'
@@ -43,8 +44,8 @@ export default function App() {
   const [muted, setMuted] = useStoredState('mudo', false)
   const [strumMs, setStrumMs] = useStoredState('velocidade-ataque', STRUM_DELAY_MS)
   const [favorites, setFavorites] = useStoredState<string[]>('favoritos', [])
-  // Quantas vezes escolhi a posição aberta vs. outras (para abrir já na preferida).
-  const [openStats, setOpenStats] = useStoredState('preferencia-aberta', { open: 1, other: 0 })
+  // Filtro por tipo: todos, tríades, tétrades, inversões ou outros.
+  const [filter, setFilter] = useStoredState<ChordFilter>('filtro-acordes', 'todos')
   const [highlight, setHighlight] = useState<number | null>(null)
   const [captureOpen, setCaptureOpen] = useState(false)
   const [tab, setTab] = useStoredState<TabId>('aba', 'acordes')
@@ -58,28 +59,27 @@ export default function App() {
   const [bgReady, setBgReady] = useState(false)
 
   const chord = useMemo(() => toRef(stored), [stored])
-  const shapes = useMemo(() => shapesFor(chord), [chord])
+  // No filtro "Inversões" o braço mostra só as formas com outra nota do acorde no baixo.
+  const shapesOf = useCallback((c: ChordRef, f: ChordFilter) => (f === 'inversoes' ? inversionShapesFor(c) : shapesFor(c)), [])
+  const shapes = useMemo(() => shapesOf(chord, filter), [chord, filter, shapesOf])
   const analysis = useMemo(() => analyze(chord), [chord])
   const mode = modeOverride ?? defaultMode(chord)
 
-  const preferredIndex = useCallback(
-    (list: typeof shapes) => {
-      const preferOpen = openStats.open >= openStats.other
-      if (preferOpen) return 0 // a aberta, quando existe, é sempre a primeira
-      const firstClosed = list.findIndex((s) => !s.isOpen)
-      return firstClosed === -1 ? 0 : firstClosed
-    },
-    [openStats],
-  )
-  const [variation, setVariation] = useState(() => ({ key: keyOf(chord), index: preferredIndex(shapes) }))
-  // Trocou de acorde: volta para a variação preferida.
-  const index =
-    variation.key === keyOf(chord) ? Math.min(variation.index, shapes.length - 1) : preferredIndex(shapes)
+  // Ao trocar de acorde (de tom ou de tipo), abre sempre na forma mais baixa:
+  // a aberta, se existir, ou a de casa mais baixa. As formas já vêm nessa
+  // ordem, então é a primeira da lista.
+  const [variation, setVariation] = useState(() => ({ key: keyOf(chord) + filter, index: 0 }))
+  const index = variation.key === keyOf(chord) + filter ? Math.min(variation.index, shapes.length - 1) : 0
   const shape = shapes[index] ?? null
 
-  const changeChord = (c: ChordRef) => {
+  // bass: nota pedida no baixo (inversão digitada, ex.: C/E) — abre no filtro Inversões.
+  const changeChord = (c: ChordRef, bass?: string) => {
+    const f: ChordFilter = bass ? 'inversoes' : filter
+    if (bass) setFilter('inversoes')
+    const list = shapesOf(c, f)
+    const withBass = bass ? list.findIndex((x) => x.bass && Note.chroma(x.bass) === Note.chroma(bass)) : -1
     setStored({ root: c.root, q: c.quality.id })
-    setVariation({ key: keyOf(c), index: preferredIndex(shapesFor(c)) })
+    setVariation({ key: keyOf(c) + f, index: Math.max(0, withBass) })
     setHighlight(null)
     setModeOverride(null)
   }
@@ -87,12 +87,9 @@ export default function App() {
   const selectVariation = useCallback(
     (i: number) => {
       const next = Math.max(0, Math.min(i, shapes.length - 1))
-      setVariation({ key: keyOf(chord), index: next })
-      if (shapes[0]?.isOpen) {
-        setOpenStats((s) => (next === 0 ? { ...s, open: s.open + 1 } : { ...s, other: s.other + 1 }))
-      }
+      setVariation({ key: keyOf(chord) + filter, index: next })
     },
-    [chord, shapes, setOpenStats],
+    [chord, shapes, filter],
   )
 
   // Setas esquerda/direita navegam entre as variações (fora da caixa de texto).
@@ -187,7 +184,17 @@ export default function App() {
 
         {/* A aba escondida continua montada: o metrônomo segue tocando enquanto você olha os acordes. */}
         <div hidden={tab !== 'acordes'} className="flex flex-col gap-5">
-        <ChordPicker chord={chord} onChange={changeChord} />
+        <ChordPicker
+          chord={chord}
+          onChange={changeChord}
+          filter={filter}
+          onFilter={(f) => {
+            setFilter(f)
+            // Se a qualidade atual não entra no filtro, vai para a primeira que entra.
+            const allowed = qualitiesFor(f)
+            if (!allowed.some((q) => q.id === chord.quality.id)) changeChord({ root: chord.root, quality: allowed[0] })
+          }}
+        />
 
         {favorites.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
@@ -226,6 +233,7 @@ export default function App() {
                       className="font-display text-5xl font-bold tracking-tight"
                     >
                       {chordDisplayName(chord)}
+                      {filter === 'inversoes' && shape?.bass && (shape.inversion ?? 0) > 0 && '/' + shape.bass}
                     </motion.h2>
                   </AnimatePresence>
                   <button
@@ -240,6 +248,7 @@ export default function App() {
                 <p className="truncate text-sm text-slate-400">
                   {chord.quality.name} · {shape?.label ?? '—'}
                   {shape?.rootless && ' · sem tônica'}
+                  {shape && (shape.inversion ?? 0) > 0 && ` · ${INVERSION_NAMES[shape.inversion!]} (${shape.bass} no baixo)`}
                 </p>
               </div>
               <button
@@ -353,6 +362,11 @@ export default function App() {
 
             <div className="w-full max-w-[640px]">
               <VariationsBar shapes={shapes} active={index} analysis={analysis} lefty={lefty} onSelect={selectVariation} />
+              {shapes.length === 0 && (
+                <p className="rounded-xl border border-dashed border-line px-3 py-2 text-sm text-slate-400">
+                  Não há inversões de {chordDisplayName(chord)} no banco de acordes. Escolha outro acorde ou o filtro Todos.
+                </p>
+              )}
             </div>
           </section>
 
