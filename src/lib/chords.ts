@@ -1,6 +1,6 @@
 import guitar from '@tombatossals/chords-db/lib/guitar.json'
 import { Chord, Interval, Note } from 'tonal'
-import { ADDED, REMOVED, shapeKey, type ExtraShape } from './chordFixes'
+import { FIXES, shapeKey } from './chordFixes'
 
 // ---------------------------------------------------------------------------
 // Banco de formas: @tombatossals/chords-db (licença MIT).
@@ -138,18 +138,25 @@ function toShape(p: DbPosition): Omit<Shape, 'label'> {
   return { frets, fingers, barres, baseFret: p.baseFret, isOpen }
 }
 
+// Forma ajustada (ver chordFixes.ts) -> mesmo formato das formas do banco.
+// A pestana sai da digitação: um dedo em 2+ cordas na mesma casa.
+function fromFix(frets: number[], fingers: number[]): Omit<Shape, 'label'> {
+  const pressed = frets.filter((f) => f > 0)
+  const baseFret = !pressed.length || Math.max(...pressed) <= 5 ? 1 : Math.min(...pressed)
+  const barres: Barre[] = []
+  for (const finger of new Set(fingers.filter((d) => d > 0))) {
+    const on = frets.flatMap((f, s) => (fingers[s] === finger && f > 0 ? [s] : []))
+    if (on.length > 1 && new Set(on.map((s) => frets[s])).size === 1)
+      barres.push({ fret: frets[on[0]], from: Math.min(...on), to: Math.max(...on), finger })
+  }
+  const isOpen = baseFret === 1 && frets.some((f) => f === 0)
+  return { frets: [...frets], fingers: [...fingers], barres, baseFret, isOpen }
+}
+
 // Sugestão de digitação para formas sem essa informação: a casa mais baixa
 // recebe o dedo mais baixo, a mais alta o mais alto. Só sugerimos quando cabe
 // em 4 dedos sem pestana; caso contrário, os círculos ficam sem número
 // (melhor não mostrar do que ensinar uma digitação errada).
-// Forma acrescentada à mão -> mesmo formato das formas do banco.
-function fromExtra(x: ExtraShape): Omit<Shape, 'label'> {
-  const pressed = x.frets.filter((f) => f > 0)
-  const baseFret = !pressed.length || Math.max(...pressed) <= 4 ? 1 : Math.min(...pressed)
-  const isOpen = baseFret === 1 && x.frets.some((f) => f === 0)
-  return { frets: [...x.frets], fingers: [...x.fingers], barres: x.barres, baseFret, isOpen }
-}
-
 function suggestFingers(frets: number[]) {
   const pressed = frets.filter((f) => f > 0)
   const distinct = [...new Set(pressed)].sort((a, b) => a - b)
@@ -189,13 +196,15 @@ export function shapesFor(ref: ChordRef): Shape[] {
     const pressed = s.frets.filter((f) => f > 0)
     return pressed.length ? Math.min(...pressed) : 0
   }
-  // Correções verificadas (ver chordFixes.ts): tira as formas erradas do
-  // banco e acrescenta formas-padrão onde faltava.
+  // Formas com notas erradas no banco são trocadas pela versão ajustada
+  // (ver chordFixes.ts); nenhuma forma é removida.
   const key = DB_KEYS[chroma]
-  const fromDb = entry.positions.map(toShape).filter((s) => !REMOVED.has(shapeKey(key, entry.suffix, s.frets)))
-  const known = new Set(fromDb.map((s) => s.frets.join(',')))
-  const extra = (ADDED[key]?.[entry.suffix] ?? []).filter((x) => !known.has(x.frets.join(','))).map(fromExtra)
-  return [...fromDb, ...extra]
+  const shapes = entry.positions.map((p) => {
+    const s = toShape(p)
+    const fix = FIXES[shapeKey(key, entry.suffix, s.frets)]
+    return fix ? fromFix(fix.frets, fix.fingers) : s
+  })
+  return shapes
     .sort((a, b) => Number(b.isOpen) - Number(a.isOpen) || lowest(a) - lowest(b))
     .map((s) => ({ ...s, label: positionLabel(s), rootless: !soundsChroma(s.frets, chroma) }))
     .map((s, _, all) => {
