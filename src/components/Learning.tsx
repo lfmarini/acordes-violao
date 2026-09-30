@@ -5,17 +5,22 @@ import { MAX_RECORD_MIN } from '../lib/recorder'
 import { AmplitudeChart, type BeatMark } from './AmplitudeChart'
 import { LiveFretboard } from './LiveFretboard'
 import { MetronomePanel } from './MetronomePanel'
+import { RhythmTrainer } from './RhythmTrainer'
+import { useStoredState } from '../lib/storage'
 
 /** Limites do tempo que a nota fica no violão virtual (ms). */
 const MIN_FADE_MS = 800
 const MAX_FADE_MS = 6000
 
-// Aba "Aprendizado": metrônomo e gráfico de amplitude, lado a lado no
+// Aba "Aprendizado": dois modos. "Treino de ritmo" (exercícios de dedos com
+// metrônomo) e "Livre": metrônomo e gráfico de amplitude, lado a lado no
 // computador e um embaixo do outro no celular. O "violão virtual" (o braço
 // inteiro com as notas que o microfone identifica) fica dentro do quadro de
 // amplitude, logo acima de "Salvar gravação". As batidas do metrônomo
 // são repassadas ao gráfico para aparecerem como linhas verticais.
 export function Learning({ active, onPick }: { active: boolean; onPick: (c: ChordRef) => void }) {
+  const [mode, setMode] = useStoredState<'ritmo' | 'livre'>('aprendizado-modo', 'ritmo')
+  const free = active && mode === 'livre'
   const beats = useRef<BeatMark[]>([])
   const onBeat = useCallback((beat: number, at: number) => {
     // Guardamos as batidas pelo mesmo tempo da gravação, para poder mistura-las no arquivo.
@@ -50,16 +55,38 @@ export function Learning({ active, onPick }: { active: boolean; onPick: (c: Chor
   }, [])
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:gap-6 lg:grid-cols-[400px_minmax(0,1fr)]">
-      <MetronomePanel onBeat={onBeat} active={active} onTempo={onTempo} stopSignal={stopMetronome} />
-      <AmplitudeChart
-        beats={beats}
-        active={active}
-        onPick={onPick}
-        onNotes={onNotes}
-        onUserStop={() => setStopMetronome((n) => n + 1)}
-        beforeSave={<LiveFretboard hits={heard.hits} now={heard.now} on={heard.on} embedded fadeMs={fadeMs} fadeHint={fadeHint} />}
-      />
+    <div>
+      <div className="mb-4 flex justify-center gap-2" role="group" aria-label="Modo da aba Aprendizado">
+        {[
+          { id: 'ritmo' as const, label: 'Treino de ritmo' },
+          { id: 'livre' as const, label: 'Livre' },
+        ].map((m) => (
+          <button
+            key={m.id}
+            onClick={() => setMode(m.id)}
+            aria-pressed={mode === m.id}
+            className={`btn btn-round px-4 py-1.5 ${mode === m.id ? 'btn-primary' : ''}`}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+
+      <div hidden={mode !== 'ritmo'} className="mx-auto max-w-2xl">
+        <RhythmTrainer active={active && mode === 'ritmo'} />
+      </div>
+
+      <div hidden={mode !== 'livre'} className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:gap-6 lg:grid-cols-[400px_minmax(0,1fr)]">
+        <MetronomePanel onBeat={onBeat} active={free} onTempo={onTempo} stopSignal={stopMetronome} />
+        <AmplitudeChart
+          beats={beats}
+          active={free}
+          onPick={onPick}
+          onNotes={onNotes}
+          onUserStop={() => setStopMetronome((n) => n + 1)}
+          beforeSave={<LiveFretboard hits={heard.hits} now={heard.now} on={heard.on} embedded fadeMs={fadeMs} fadeHint={fadeHint} />}
+        />
+      </div>
     </div>
   )
 }
