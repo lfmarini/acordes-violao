@@ -42,6 +42,10 @@ export interface Shape {
   isOpen: boolean
   /** A tônica não soa (posição de jazz, pensada para tocar com baixista). */
   rootless?: boolean
+  /** Nota mais grave que soa, com a grafia do acorde (ex.: "E"). */
+  bass?: string
+  /** 0 = tônica no baixo; 1 = terça (1ª inversão); 2 = quinta (2ª); 3 = sétima (3ª); -1 = outra nota. */
+  inversion?: number
   label: string // "Aberto", "3ª casa"...
 }
 
@@ -91,6 +95,38 @@ export const QUALITIES = [
   { id: '13', br: '13', tonal: '13', db: '13', name: 'com décima terceira' },
 ] as const
 export type Quality = (typeof QUALITIES)[number]
+
+// ---------------------------------------------------------------------------
+// Filtro por tipo de acorde:
+//  - tríades: 3 notas (maior, menor, diminuto, aumentado e os suspensos);
+//  - tétrades: tríade + sétima (7, 7M, m7, m7M, °7, m7(b5), 7sus4);
+//  - outros: sextas, nonas, 13 e alterados (acordes com notas acrescentadas);
+//  - inversões: tríades e tétrades com outra nota do acorde no baixo.
+// ---------------------------------------------------------------------------
+export type ChordFilter = 'todos' | 'triades' | 'tetrades' | 'inversoes' | 'outros'
+
+export const FILTERS: { id: ChordFilter; label: string; hint: string }[] = [
+  { id: 'todos', label: 'Todos', hint: 'todos os acordes' },
+  { id: 'triades', label: 'Tríades', hint: '3 notas: tônica, terça e quinta' },
+  { id: 'tetrades', label: 'Tétrades', hint: 'tríade + sétima' },
+  { id: 'inversoes', label: 'Inversões', hint: 'outra nota do acorde no baixo' },
+  { id: 'outros', label: 'Outros', hint: 'sextas, nonas, 13 e alterados' },
+]
+
+const CATEGORY: Record<Quality['id'], 'triades' | 'tetrades' | 'outros'> = {
+  maior: 'triades', menor: 'triades', dim: 'triades', aug: 'triades', sus2: 'triades', sus4: 'triades',
+  '7': 'tetrades', '7M': 'tetrades', m7: 'tetrades', m7M: 'tetrades', dim7: 'tetrades', m7b5: 'tetrades', '7sus4': 'tetrades',
+  '6': 'outros', m6: 'outros', '9': 'outros', add9: 'outros', m9: 'outros', '7M9': 'outros', '7b9': 'outros', '7#9': 'outros', '13': 'outros',
+}
+
+/** As qualidades que aparecem na lista com o filtro escolhido. */
+export function qualitiesFor(filter: ChordFilter): readonly Quality[] {
+  if (filter === 'todos') return QUALITIES
+  if (filter === 'inversoes') return QUALITIES.filter((q) => CATEGORY[q.id] !== 'outros')
+  return QUALITIES.filter((q) => CATEGORY[q.id] === filter)
+}
+
+export const INVERSION_NAMES = ['posição fundamental', '1ª inversão', '2ª inversão', '3ª inversão']
 
 // "Impressão digital" de um acorde: os semitons de cada intervalo a partir da
 // tônica. Serve para reconhecer que "C7M", "Cmaj7" e "CM7" são o mesmo acorde.
@@ -175,6 +211,19 @@ function suggestFingers(frets: number[]) {
   })
 }
 
+// Nota mais grave da forma e qual grau do acorde ela é (inversão).
+function bassInfo(frets: number[], ref: ChordRef): { bass?: string; inversion?: number } {
+  const s = frets.findIndex((f) => f >= 0)
+  if (s < 0) return {}
+  const chroma = (Note.midi(OPEN_STRINGS[s])! + frets[s]) % 12
+  const chord = Chord.get(chordTonalName(ref))
+  const k = chord.notes.findIndex((n) => Note.chroma(n) === chroma)
+  if (k < 0) return { bass: Note.pitchClass(Note.fromMidi(chroma + 60)), inversion: -1 }
+  const num = Interval.get(chord.intervals[k]).num ?? 0
+  const inversion = ({ 1: 0, 3: 1, 5: 2, 7: 3 } as Record<number, number>)[num] ?? -1
+  return { bass: chord.notes[k], inversion }
+}
+
 // Alguma corda tocada soa a nota com esse chroma (0 = C ... 11 = B)?
 function soundsChroma(frets: number[], chroma: number) {
   return frets.some((f, s) => f >= 0 && (Note.midi(OPEN_STRINGS[s])! + f) % 12 === chroma)
@@ -206,9 +255,42 @@ export function shapesFor(ref: ChordRef): Shape[] {
   })
   return shapes
     .sort((a, b) => Number(b.isOpen) - Number(a.isOpen) || lowest(a) - lowest(b))
-    .map((s) => ({ ...s, label: positionLabel(s), rootless: !soundsChroma(s.frets, chroma) }))
+    .map((s) => ({ ...s, label: positionLabel(s), rootless: !soundsChroma(s.frets, chroma), ...bassInfo(s.frets, ref) }))
     .map((s, _, all) => {
       // Duas formas na mesma posição: numeramos para diferenciar.
+      const same = all.filter((o) => o.label === s.label)
+      return same.length > 1 ? { ...s, label: `${s.label} ${same.indexOf(s) + 1}` } : s
+    })
+}
+
+// Inversões de um acorde: as formas do banco com outra nota do acorde no
+// baixo, mais as formas "com barra" do banco (C/E, Am/C...) quando o baixo é
+// nota do acorde. Da mais grave para a mais aguda.
+export function inversionShapesFor(ref: ChordRef): Shape[] {
+  const chroma = Note.chroma(ref.root)
+  if (chroma === undefined) return []
+  const own = shapesFor(ref).filter((s) => (s.inversion ?? 0) > 0)
+  const prefix = ref.quality.id === 'maior' ? '/' : ref.quality.id === 'menor' ? 'm/' : null
+  const slash = prefix
+    ? (db.chords[DB_KEYS[chroma]] ?? [])
+        .filter((c) => c.suffix.startsWith(prefix) && (prefix === 'm/' || !c.suffix.startsWith('m/')))
+        .flatMap((c) =>
+          c.positions.map((pos) => {
+            const sh = toShape(pos)
+            const fix = FIXES[shapeKey(DB_KEYS[chroma], c.suffix, sh.frets)]
+            return fix ? fromFix(fix.frets, fix.fingers) : sh
+          }),
+        )
+        .map((s) => ({ ...s, label: positionLabel(s), rootless: false, ...bassInfo(s.frets, ref) }))
+        .filter((s) => (s.inversion ?? 0) > 0)
+    : []
+  const seen = new Set<string>()
+  const lowest = (s: Shape) => Math.min(...s.frets.filter((f) => f > 0), 99)
+  return [...own, ...slash]
+    .filter((s) => !seen.has(s.frets.join(',')) && seen.add(s.frets.join(',')))
+    .sort((a, b) => (a.inversion ?? 0) - (b.inversion ?? 0) || Number(b.isOpen) - Number(a.isOpen) || lowest(a) - lowest(b))
+    .map((s) => ({ ...s, label: s.label.replace(/ \d+$/, '') }))
+    .map((s, _, all) => {
       const same = all.filter((o) => o.label === s.label)
       return same.length > 1 ? { ...s, label: `${s.label} ${same.indexOf(s) + 1}` } : s
     })

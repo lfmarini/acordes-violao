@@ -8,7 +8,7 @@
 //    diferentes sem pestana, abertura grande demais).
 // Rode com: npm run verificar
 import { Chord, Interval, Note } from 'tonal'
-import { QUALITIES, ROOTS, chordDisplayName, chordTonalName, shapesFor, type Shape } from '../src/lib/chords'
+import { QUALITIES, ROOTS, chordDisplayName, chordTonalName, inversionShapesFor, shapesFor, type Shape } from '../src/lib/chords'
 import { noteAt } from '../src/lib/theory'
 
 const pc = (n: string) => Note.chroma(n)!
@@ -72,7 +72,9 @@ for (const r of ROOTS) {
       report.push(`${chordDisplayName(ref).padEnd(10)} SEM FORMAS no banco`)
       continue
     }
-    shapes.forEach((sh, i) => {
+    // As inversões usam também as formas "com barra" do banco (C/E, Am/C...).
+    const inversions = inversionShapesFor(ref).filter((x) => !shapes.some((y) => y.frets.join() === x.frets.join()))
+    ;[...shapes, ...inversions].forEach((sh, i) => {
       total++
       const p = check(sh, chordTonalName(ref))
       if (p.length) {

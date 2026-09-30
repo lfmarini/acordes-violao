@@ -1,15 +1,19 @@
 import { useId, useMemo, useState } from 'react'
-import { QUALITIES, ROOTS, chordDisplayName, type ChordRef } from '../lib/chords'
+import { FILTERS, ROOTS, chordDisplayName, qualitiesFor, type ChordFilter, type ChordRef } from '../lib/chords'
 import { parseChord, suggest } from '../lib/parser'
 import { Note } from 'tonal'
 
 interface Props {
   chord: ChordRef
-  onChange: (c: ChordRef) => void
+  /** bass: nota pedida no baixo (inversão digitada, ex.: C/E). */
+  onChange: (c: ChordRef, bass?: string) => void
+  /** Filtro por tipo de acorde (sem onFilter, a fileira de filtros não aparece). */
+  filter?: ChordFilter
+  onFilter?: (f: ChordFilter) => void
 }
 
 // Duas formas de escolher: lista (tônica + qualidade) e caixa de texto.
-export function ChordPicker({ chord, onChange }: Props) {
+export function ChordPicker({ chord, onChange, filter = 'todos', onFilter }: Props) {
   const [text, setText] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
@@ -22,7 +26,7 @@ export function ChordPicker({ chord, onChange }: Props) {
   const submit = (value: string) => {
     const r = parseChord(value)
     if (r.ok) {
-      onChange(r.chord)
+      onChange(r.chord, r.bass)
       setError(null)
       setText('')
       setOpen(false)
@@ -136,9 +140,27 @@ export function ChordPicker({ chord, onChange }: Props) {
         })}
       </div>
 
+      {/* Filtro por tipo de acorde */}
+      {onFilter && (
+        <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Tipo de acorde">
+          {FILTERS.map((f) => (
+            <button
+              key={f.id}
+              onClick={() => onFilter(f.id)}
+              aria-pressed={filter === f.id}
+              title={f.hint}
+              className={`btn btn-round px-3 py-1 text-xs ${filter === f.id ? 'btn-primary' : ''}`}
+            >
+              {f.label}
+            </button>
+          ))}
+          <span className="text-xs text-slate-500">{FILTERS.find((f) => f.id === filter)!.hint}</span>
+        </div>
+      )}
+
       {/* ...depois a qualidade */}
       <div className="scroll-thin -mx-2 flex gap-1.5 overflow-x-auto px-2 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
-        {QUALITIES.map((q) => {
+        {qualitiesFor(filter).map((q) => {
           const active = q.id === chord.quality.id
           return (
             <button

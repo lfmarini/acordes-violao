@@ -28,6 +28,7 @@ export const FIXES: Record<string, Fix> = {
   'A|dim|5,3,-1,4,3,-1': { frets: [5, 3, -1, 5, 4, -1], fingers: [3, 1, 0, 4, 2, 0], why: '3ª corda da casa 4 para a 5 (C) e 2ª da casa 3 para a 4 (Eb)' },
   'Bb|6|-1,13,11,11,10,-1': { frets: [-1, 13, 12, 12, 11, -1], fingers: [0, 4, 2, 3, 1, 0], why: '4ª, 3ª e 2ª cordas uma casa acima: D, G, Bb (antes C#, F#, A)' },
   'Bb|6|6,8,-1,7,8,6': { frets: [6, 8, -1, 7, 8, -1], fingers: [1, 3, 0, 2, 4, 0], why: 'digitação pedia 5 dedos: 1ª corda deixa de ser tocada' },
+  'F|/A|5,3,3,5,6,0': { frets: [5, 3, 3, 5, 6, -1], fingers: [2, 1, 1, 3, 4, 0], why: 'F/A: 1ª corda solta (E) deixa de ser tocada' },
   'B|aug|-1,14,13,12,12,0': { frets: [-1, 14, 13, 12, 12, -1], fingers: [0, 4, 3, 1, 2, 0], why: '1ª corda solta (E) deixa de ser tocada' },
 
   // ---- Acordes de 13 com a 4ª (11ª), que não entra no 13 ----

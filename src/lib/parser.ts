@@ -22,7 +22,7 @@ import { QUALITIES, ROOTS, chordDisplayName, qualityOfTonalChord, shapesFor, typ
 // ---------------------------------------------------------------------------
 
 export type ParseResult =
-  | { ok: true; chord: ChordRef }
+  | { ok: true; chord: ChordRef; bass?: string } // bass: nota pedida no baixo (inversão, ex.: C/E)
   | { ok: false; error: string }
 
 const ROOT_RE = /^([a-g])([#♯]|b(?!5)|♭)?(.*)$/i
@@ -76,11 +76,15 @@ export function parseChord(input: string): ParseResult {
   const root = m[1].toUpperCase() + (m[2] ? m[2].replace('♯', '#').replace('♭', 'b').toLowerCase() : '')
   if (!Note.get(root).name) return { ok: false, error: `Não reconheci a nota "${root}".` }
 
+  // Inversão escrita com barra (C/E, Am/C, G7/B): o acorde antes da barra e
+  // a nota do baixo depois. O baixo precisa ser uma nota do acorde.
+  let bass: string | undefined
   if (m[3].includes('/')) {
-    return {
-      ok: false,
-      error: `Acordes com baixo trocado (como ${text}) ainda não estão no app. Tente só ${text.split('/')[0]}.`,
-    }
+    const cut = m[3].indexOf('/')
+    const b = m[3].slice(cut + 1).match(/^([a-g])([#♯]|b|♭)?$/i)
+    if (!b) return { ok: false, error: `Não reconheci a nota do baixo em "${text}". Exemplo: C/E, Am/C, G7/B.` }
+    bass = b[1].toUpperCase() + (b[2] ? b[2].replace('♯', '#').replace('♭', 'b').toLowerCase() : '')
+    m[3] = m[3].slice(0, cut)
   }
   const suffix = translateSuffix(m[3])
   const chord = Chord.get(root + suffix)
@@ -100,6 +104,16 @@ export function parseChord(input: string): ParseResult {
   const ref: ChordRef = { root, quality }
   if (shapesFor(ref).length === 0) {
     return { ok: false, error: `Não há formas de ${chordDisplayName(ref)} no banco de acordes.` }
+  }
+  if (bass) {
+    const tone = chord.notes.find((n) => Note.chroma(n) === Note.chroma(bass))
+    if (!tone) {
+      return {
+        ok: false,
+        error: `${bass} não é nota de ${chordDisplayName(ref)} (${chord.notes.join(' – ')}). Acordes com baixo de fora do acorde ainda não estão no app.`,
+      }
+    }
+    return { ok: true, chord: ref, bass: tone }
   }
   return { ok: true, chord: ref }
 }
