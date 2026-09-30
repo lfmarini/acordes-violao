@@ -38,6 +38,8 @@ export function Learning({ active, onPick }: { active: boolean; onPick: (c: Chor
 
   // Notas ouvidas pelo microfone: nota MIDI -> última vez que soou.
   const [heard, setHeard] = useState({ hits: new Map<number, number>(), now: 0, on: false })
+  // Ao parar o microfone, o metrônomo também para.
+  const [stopMetronome, setStopMetronome] = useState(0)
   const onNotes = useCallback((midis: number[], _live: LiveResult, micOn = true) => {
     const now = performance.now()
     setHeard((h) => {
@@ -49,12 +51,13 @@ export function Learning({ active, onPick }: { active: boolean; onPick: (c: Chor
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:gap-6 lg:grid-cols-[400px_minmax(0,1fr)]">
-      <MetronomePanel onBeat={onBeat} active={active} onTempo={onTempo} />
+      <MetronomePanel onBeat={onBeat} active={active} onTempo={onTempo} stopSignal={stopMetronome} />
       <AmplitudeChart
         beats={beats}
         active={active}
         onPick={onPick}
         onNotes={onNotes}
+        onUserStop={() => setStopMetronome((n) => n + 1)}
         beforeSave={<LiveFretboard hits={heard.hits} now={heard.now} on={heard.on} embedded fadeMs={fadeMs} fadeHint={fadeHint} />}
       />
     </div>

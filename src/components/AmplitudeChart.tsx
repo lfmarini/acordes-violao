@@ -3,7 +3,7 @@ import { chordDisplayName, type ChordRef } from '../lib/chords'
 import { LIVE_GATE_DB, LiveDetector, liveLabel, type LiveResult } from '../lib/liveDetect'
 import { analyzeSpectrum } from '../lib/recognize'
 import { pickNotes } from '../lib/liveNotes'
-import { NOISE_LEVELS, setNoiseLevel, type NoiseLevel } from '../lib/denoise'
+import { NOISE_DEFAULT, noisePercent, setNoiseLevel, type NoiseLevel } from '../lib/denoise'
 import { micErrorMessage, openMicrophone, type MicSession } from '../lib/microphone'
 import { MAX_RECORD_MIN, MP3_KBPS, Recorder, downloadBlob, recordingFileName } from '../lib/recorder'
 import { useStoredState } from '../lib/storage'
@@ -42,6 +42,8 @@ interface Props {
   onNotes?: (midis: number[], result: LiveResult, micOn?: boolean) => void
   /** Conteúdo mostrado logo acima de "Salvar gravação". */
   beforeSave?: React.ReactNode
+  /** Avisado quando você para o microfone (botão ou "Parar e ouvir"): o metrônomo para junto. */
+  onUserStop?: () => void
 }
 
 // Opções de salvar: segundos (null = a gravação inteira).
@@ -88,7 +90,7 @@ function prepare(c: HTMLCanvasElement) {
   return { g, w, h }
 }
 
-export function AmplitudeChart({ beats, active, onPick, onNotes, beforeSave }: Props) {
+export function AmplitudeChart({ beats, active, onPick, onNotes, beforeSave, onUserStop }: Props) {
   const onNotesRef = useRef(onNotes)
   useEffect(() => {
     onNotesRef.current = onNotes
@@ -109,7 +111,8 @@ export function AmplitudeChart({ beats, active, onPick, onNotes, beforeSave }: P
   const [history, setHistory] = useState<string[]>([])
   const [format, setFormat] = useStoredState<Format>('formato-gravacao', 'mp3')
   const [saving, setSaving] = useState<{ label: string; progress: number } | null>(null)
-  const [noise, setNoise] = useStoredState<NoiseLevel>('reducao-ruido', 'off')
+  const [noiseStored, setNoise] = useStoredState<NoiseLevel>('reducao-ruido', NOISE_DEFAULT)
+  const noise = noisePercent(noiseStored) // 0–100 (aceita os nomes antigos guardados)
   const [withClicks, setWithClicks] = useStoredState('gravar-metronomo', true)
   const [replayUrl, setReplayUrl] = useState<string | null>(null)
   const denoiser = useRef<AudioWorkletNode | null>(null)
@@ -125,6 +128,7 @@ export function AmplitudeChart({ beats, active, onPick, onNotes, beforeSave }: P
   const replay = () => {
     const rec = recorder.current
     if (!rec || rec.seconds === 0) return
+    if (on) onUserStop?.()
     stopRef.current()
     if (replayUrl) URL.revokeObjectURL(replayUrl)
     setReplayUrl(URL.createObjectURL(rec.toWav(undefined, clicks())))
@@ -454,7 +458,13 @@ export function AmplitudeChart({ beats, active, onPick, onNotes, beforeSave }: P
     <section className="min-w-0 rounded-2xl border border-line bg-panel/80 p-3 backdrop-blur sm:p-6">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-display text-xl font-bold">Amplitude sonora</h2>
-        <button onClick={() => (on ? stopRef.current() : void start())} className={`btn btn-round ${on ? 'btn-danger' : 'btn-primary'}`}>
+        <button
+          onClick={() => {
+            if (!on) return void start()
+            onUserStop?.()
+            stopRef.current()
+          }}
+          className={`btn btn-round ${on ? 'btn-danger' : 'btn-primary'}`}>
           {on ? '■ Parar microfone' : '● Ligar microfone'}
         </button>
       </div>
@@ -538,16 +548,21 @@ export function AmplitudeChart({ beats, active, onPick, onNotes, beforeSave }: P
         </div>
         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-400" role="group" aria-label="Redução de ruído">
           <span className="w-full sm:w-auto">Redução de ruído:</span>
-          {NOISE_LEVELS.map((n) => (
-            <button
-              key={n.id}
-              onClick={() => setNoise(n.id)}
-              aria-pressed={noise === n.id}
-              className={`btn btn-round px-3 py-1 text-xs ${noise === n.id ? 'btn-primary' : ''}`}
-            >
-              {n.label}
-            </button>
-          ))}
+          {/* Barra de 0 (desligada) a 100% (máxima). Muda na hora, mesmo gravando. */}
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={noise}
+            onChange={(e) => setNoise(Number(e.target.value))}
+            aria-label="Intensidade da redução de ruído"
+            aria-valuetext={noise === 0 ? 'desligada' : `${noise} por cento`}
+            className="min-w-0 flex-1 accent-[var(--color-accent)] sm:max-w-56"
+          />
+          <span className="w-24 shrink-0 tabular-nums text-slate-300">
+            {noise === 0 ? 'desligada' : `${noise}% · ${noise < 40 ? 'leve' : noise < 75 ? 'média' : 'forte'}`}
+          </span>
         </div>
         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-400" role="group" aria-label="Metrônomo na gravação">
           <span className="w-full sm:w-auto">Som do metrônomo na gravação:</span>
@@ -610,7 +625,7 @@ export function AmplitudeChart({ beats, active, onPick, onNotes, beforeSave }: P
         <p className="mt-1 text-xs text-slate-500">
           "Gravar" o metrônomo mistura o tic direto no arquivo, no tempo certo. Se o metrônomo sai pelo alto-falante, o microfone também
           pode captá-lo; com fones de ouvido, só entra no arquivo o que você escolher aqui. A redução de ruído tira chiado e barulho
-          constante (ventilador, geladeira); a forte limpa mais, mas pode abafar um pouco as notas fracas.
+          constante (ventilador, geladeira): quanto mais para a direita, mais limpa, mas acima de ~75% pode abafar as notas fracas.
         </p>
       </div>
       <p className="mt-2 text-xs text-slate-500">

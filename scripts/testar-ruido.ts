@@ -1,7 +1,7 @@
 // Testa a redução de ruído: um Lá (A2) sintetizado com chiado por cima.
 // Mede quanto o chiado cai (trecho só de ruído) e quanto da nota sobra.
 // Rode com: npm run ruido
-import { DENOISE_WORKLET, NOISE_PARAMS, type NoiseLevel } from '../src/lib/denoise'
+import { DENOISE_WORKLET, noiseParams, type NoiseLevel } from '../src/lib/denoise'
 import { synthPluck } from '../src/lib/ks'
 
 const sr = 48000
@@ -22,7 +22,7 @@ const input = clean.map((v, i) => v + noise[i])
 
 function run(level: NoiseLevel) {
   const p = new Ctor()
-  p.setLevel(level === 'off' ? null : NOISE_PARAMS[level])
+  p.setLevel(noiseParams(level))
   const out = new Float32Array(len)
   for (let i = 0; i < len; i += 128) {
     const o = new Float32Array(128)
@@ -39,11 +39,11 @@ const rms = (a: Float32Array, from: number, to: number) => {
 const db = (x: number) => (20 * Math.log10(x)).toFixed(1)
 const noiseIn = rms(input, sr * 0.5, sr * 0.95)
 const noteIn = rms(clean, sr * 1.05, sr * 1.8)
-for (const level of ['off', 'fraca', 'media', 'forte'] as NoiseLevel[]) {
+for (const level of [0, 15, 30, 50, 66, 80, 100] as NoiseLevel[]) {
   const out = run(level)
   const noiseOut = rms(out, sr * 0.5, sr * 0.95)
   // quanto da nota "limpa" sobrou: correlação com o sinal limpo
   let dot = 0, cc = 0
   for (let i = sr * 1.05; i < sr * 1.8; i++) { dot += out[i] * clean[i]; cc += clean[i] * clean[i] }
-  console.log(`${level.padEnd(6)} ruído ${db(noiseIn)} -> ${db(noiseOut)} dB (${db(noiseOut / noiseIn)} dB) · nota preservada ${(100 * dot / cc).toFixed(0)}% · nível da nota ${db(noteIn)} -> ${db(rms(out, sr * 1.05, sr * 1.8))} dB`)
+  console.log(`${String(level).padStart(3)}%  ruído ${db(noiseIn)} -> ${db(noiseOut)} dB (${db(noiseOut / noiseIn)} dB) · nota preservada ${(100 * dot / cc).toFixed(0)}% · nível da nota ${db(noteIn)} -> ${db(rms(out, sr * 1.05, sr * 1.8))} dB`)
 }

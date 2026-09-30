@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Redução de ruído do microfone (fraca / média / forte).
+// Redução de ruído do microfone, regulável de 0 a 100%.
 //
 // O navegador tem um "noise suppression" próprio, mas ele é feito para voz e
 // costuma cortar o som sustentado do violão. Por isso fazemos o nosso:
@@ -17,23 +17,50 @@
 //    gráfico, a identificação de acordes e a gravação.
 // ---------------------------------------------------------------------------
 
-export type NoiseLevel = 'off' | 'fraca' | 'media' | 'forte'
+/**
+ * Intensidade da redução de ruído, de 0 (desligada) a 100 (máxima).
+ * Os nomes antigos ('off', 'fraca', 'media', 'forte') ainda são aceitos:
+ * valem 0, 33, 66 e 100.
+ */
+export type NoiseLevel = number | 'off' | 'fraca' | 'media' | 'forte'
 
-export const NOISE_LEVELS: { id: NoiseLevel; label: string }[] = [
-  { id: 'off', label: 'Desligada' },
-  { id: 'fraca', label: 'Fraca' },
-  { id: 'media', label: 'Média' },
-  { id: 'forte', label: 'Forte' },
+/** Valor inicial da barra: uma redução leve. */
+export const NOISE_DEFAULT = 30
+
+const LEGACY: Record<string, number> = { off: 0, fraca: 33, media: 66, forte: 100 }
+
+/** Converte qualquer valor guardado (número ou nome antigo) para 0–100. */
+export function noisePercent(level: unknown): number {
+  if (typeof level === 'number' && Number.isFinite(level)) return Math.min(100, Math.max(0, Math.round(level)))
+  if (typeof level === 'string' && level in LEGACY) return LEGACY[level]
+  return NOISE_DEFAULT
+}
+
+export interface NoiseParams {
+  alpha: number // quanto do ruído estimado é subtraído
+  floor: number // quanto sobra, no mínimo, de cada faixa (evita som "aquático")
+  gate: number // quando só há ruído na janela, ela é abaixada inteira por esse fator
+}
+
+// Pontos de referência da barra; entre eles os valores são interpolados.
+// 33% e 66% equivalem aos antigos "fraca" e "média"; 100% ao antigo "forte".
+const ANCHORS: [number, NoiseParams][] = [
+  [0, { alpha: 0.8, floor: 0.55, gate: 1 }],
+  [33, { alpha: 1.5, floor: 0.35, gate: 1 }],
+  [66, { alpha: 3, floor: 0.16, gate: 1 }],
+  [100, { alpha: 14, floor: 0.012, gate: 0.08 }],
 ]
 
-// alpha: quanto do ruído estimado é subtraído; floor: quanto sobra, no mínimo,
-// de cada faixa (evita o som "aquático" típico de supressão exagerada).
-// gate: no forte, quando só há ruído na janela (nenhuma nota tocando), ela é
-// abaixada inteira por esse fator — tira o "chiado residual" que sobra.
-export const NOISE_PARAMS: Record<Exclude<NoiseLevel, 'off'>, { alpha: number; floor: number; gate: number }> = {
-  fraca: { alpha: 1.5, floor: 0.35, gate: 1 },
-  media: { alpha: 3, floor: 0.16, gate: 1 },
-  forte: { alpha: 14, floor: 0.012, gate: 0.08 },
+/** Parâmetros do processador para a intensidade escolhida (null = desligada). */
+export function noiseParams(level: NoiseLevel): NoiseParams | null {
+  const pct = noisePercent(level)
+  if (pct <= 0) return null
+  const k = ANCHORS.findIndex(([p]) => p >= pct)
+  const [p0, a] = ANCHORS[k - 1]
+  const [p1, b] = ANCHORS[k]
+  const t = (pct - p0) / (p1 - p0)
+  const mix = (x: number, y: number) => x + (y - x) * t
+  return { alpha: mix(a.alpha, b.alpha), floor: mix(a.floor, b.floor), gate: mix(a.gate, b.gate) }
 }
 
 // Código do processador. Fica numa string porque roda no "AudioWorklet",
@@ -149,5 +176,5 @@ export async function createDenoiser(ctx: AudioContext) {
 }
 
 export function setNoiseLevel(node: AudioWorkletNode, level: NoiseLevel) {
-  node.port.postMessage(level === 'off' ? null : NOISE_PARAMS[level])
+  node.port.postMessage(noiseParams(level))
 }

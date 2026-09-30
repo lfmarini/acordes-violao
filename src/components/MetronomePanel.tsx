@@ -10,11 +10,13 @@ interface Props {
   active: boolean
   /** Avisado quando o BPM ou o compasso mudam (o violão virtual usa para saber quanto dura um compasso). */
   onTempo?: (bpm: number, beatsPerBar: number) => void
+  /** Muda de valor quando o metrônomo deve parar (ex.: o microfone foi desligado). */
+  stopSignal?: number
 }
 
 const clampBpm = (v: number) => Math.min(BPM_MAX, Math.max(BPM_MIN, Math.round(v)))
 
-export function MetronomePanel({ onBeat, active, onTempo }: Props) {
+export function MetronomePanel({ onBeat, active, onTempo, stopSignal = 0 }: Props) {
   const [bpm, setBpm] = useStoredState('metronomo-bpm', BPM_DEFAULT)
   const [beats, setBeats] = useStoredState('metronomo-compasso', 4)
   const [volume, setVolume] = useStoredState('metronomo-volume', 0.8)
@@ -47,6 +49,14 @@ export function MetronomePanel({ onBeat, active, onTempo }: Props) {
     metro.current.beatsPerBar = beats
     metro.current.setVolume(volume)
   }, [bpm, beats, volume])
+
+  // Pedido de parada vindo de fora (o microfone foi desligado).
+  useEffect(() => {
+    if (!stopSignal || !metro.current?.running) return
+    metro.current.stop()
+    setRunning(false)
+    setCurrent(-1)
+  }, [stopSignal])
 
   const toggle = () => {
     const m = metro.current!
