@@ -37,9 +37,16 @@ export interface Tick {
   nps: number
   /** Nº da nota do exercício (0, 1, 2…); −1 na contagem. */
   note: number
+  /** Duração deste tique até o próximo (s). */
+  dur: number
   /** Se o clique soou (na contagem só os tempos soam). */
   clicked: boolean
+  /** Compasso silenciado de propósito (modo metrônomo esparso). */
+  muted: boolean
 }
+
+/** Sequência de notas por tempo do modo escada. */
+export const LADDER = [1, 2, 3, 4]
 
 export class RhythmClock {
   bpm = RHYTHM_BPM_DEFAULT
@@ -49,6 +56,13 @@ export class RhythmClock {
   volume = 0.8
   /** Tocar também um clique fraco nas subdivisões. */
   subClicks = false
+  /** Clicar só no 1º tempo de cada compasso. */
+  firstBeatOnly = false
+  /** Modo escada: troca as notas por tempo (1, 2, 3, 4…) a cada N compassos (0 = desligado). */
+  ladderBars = 0
+  /** Metrônomo esparso: em cada grupo de `muteEvery` compassos, os últimos `muteBars` ficam em silêncio (0 = desligado). */
+  muteEvery = 0
+  muteBars = 0
   /** Chamado na hora em que cada tique soa (horário em performance.now). */
   onTick: (tick: Tick, at: number) => void = () => {}
   /** Tudo o que já foi agendado nesta rodada. */
@@ -82,6 +96,7 @@ export class RhythmClock {
       this.ctx = ctx
       this.ownCtx = false
     }
+    if (this.ctx?.state === 'closed') this.ctx = null // o relógio do microfone já foi fechado
     if (!this.ctx) {
       this.ctx = new AudioContext({ latencyHint: 'interactive' })
       this.ownCtx = true
@@ -96,7 +111,7 @@ export class RhythmClock {
     this.bar = -Math.max(0, this.countInBars)
     this.beat = 0
     this.sub = 0
-    this.nps = this.bar < 0 ? 1 : this.notesPerBeat
+    this.nps = this.npsFor(this.bar)
     this.note = 0
     this.nextTime = this.ctx.currentTime + 0.1
     this.timer = window.setInterval(() => this.schedule(), LOOKAHEAD_MS)
@@ -138,6 +153,8 @@ export class RhythmClock {
     const ctx = this.ctx!
     while (this.nextTime < ctx.currentTime + SCHEDULE_AHEAD_S) {
       const countIn = this.bar < 0
+      const muted = !countIn && this.isMuted(this.bar)
+      const beatClick = this.sub === 0 && (countIn || !this.firstBeatOnly || this.beat === 0)
       const tick: Tick = {
         time: this.nextTime,
         bar: this.bar,
@@ -145,7 +162,9 @@ export class RhythmClock {
         sub: this.sub,
         nps: this.nps,
         note: countIn ? -1 : this.note,
-        clicked: this.sub === 0 || (this.subClicks && !countIn),
+        dur: 60 / this.bpm / this.nps,
+        clicked: !muted && (beatClick || (this.subClicks && !countIn && this.sub > 0)),
+        muted,
       }
       if (tick.clicked) {
         const accent = this.sub === 0 && this.beat === 0 && this.beatsPerBar > 1
@@ -175,6 +194,20 @@ export class RhythmClock {
       this.beat = 0
       this.bar++
     }
-    this.nps = this.bar < 0 ? 1 : Math.max(1, this.notesPerBeat)
+    this.nps = this.npsFor(this.bar)
+  }
+
+  /** Notas por tempo num compasso (a contagem é sempre 1; no modo escada, muda a cada N compassos). */
+  npsFor(bar: number) {
+    if (bar < 0) return 1
+    if (this.ladderBars > 0) return LADDER[Math.floor(bar / this.ladderBars) % LADDER.length]
+    return Math.max(1, this.notesPerBeat)
+  }
+
+  /** Compasso silenciado no modo metrônomo esparso. */
+  isMuted(bar: number) {
+    if (bar < 0 || this.muteEvery <= 0 || this.muteBars <= 0) return false
+    const n = Math.min(this.muteBars, this.muteEvery - 1)
+    return bar % this.muteEvery >= this.muteEvery - n
   }
 }

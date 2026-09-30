@@ -17,27 +17,38 @@ export interface MicSession {
   denoiser: AudioWorkletNode | null
   /** Gravação (null se o navegador não permitir gravar). */
   recorder: Recorder | null
+  /** Atraso de entrada do microfone (s), quando o navegador informa; senão 0. */
+  inputLatency: number
   /** Para o microfone; o que foi gravado continua no `recorder`. */
   close(): void
 }
 
-export async function openMicrophone(noise: NoiseLevel): Promise<MicSession> {
+// `denoise: false` (treino de ritmo): sem redução de ruído, que suaviza os ataques.
+// `ctx`: relógio de áudio criado antes, dentro do clique (alguns celulares só
+// liberam o som assim). Se o microfone falhar, ele não é fechado aqui.
+export async function openMicrophone(
+  noise: NoiseLevel,
+  { denoise = true, ctx: given }: { denoise?: boolean; ctx?: AudioContext } = {},
+): Promise<MicSession> {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
   })
-  const ctx = new AudioContext()
+  const ctx = given ?? new AudioContext({ latencyHint: 'interactive' })
   const source = ctx.createMediaStreamSource(stream)
   // Redução de ruído (se o navegador não suportar, segue sem ela).
   let input: AudioNode = source
   let denoiser: AudioWorkletNode | null = null
-  try {
-    denoiser = await createDenoiser(ctx)
-    setNoiseLevel(denoiser, noise)
-    source.connect(denoiser)
-    input = denoiser
-  } catch {
-    denoiser = null
+  if (denoise) {
+    try {
+      denoiser = await createDenoiser(ctx)
+      setNoiseLevel(denoiser, noise)
+      source.connect(denoiser)
+      input = denoiser
+    } catch {
+      denoiser = null
+    }
   }
+  const settings = stream.getAudioTracks()[0]?.getSettings() as MediaTrackSettings & { latency?: number }
   // Grava tudo enquanto o microfone está ligado.
   let recorder: Recorder | null = new Recorder()
   try {
@@ -51,6 +62,7 @@ export async function openMicrophone(noise: NoiseLevel): Promise<MicSession> {
     input,
     denoiser,
     recorder,
+    inputLatency: typeof settings?.latency === 'number' && settings.latency > 0 ? settings.latency : 0,
     close() {
       recorder?.detach()
       stream.getTracks().forEach((tr) => tr.stop())
