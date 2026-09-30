@@ -236,15 +236,13 @@ function positionLabel(s: Omit<Shape, 'label'>) {
 }
 
 // Todas as variações de um acorde, da mais grave/aberta para a mais aguda.
-export function shapesFor(ref: ChordRef): Shape[] {
+// Formas do banco (já com os ajustes de notas erradas), como vieram:
+// algumas têm outra nota do acorde no baixo (são inversões).
+export function bankShapes(ref: ChordRef): Shape[] {
   const chroma = Note.chroma(ref.root)
   if (chroma === undefined) return []
   const entry = db.chords[DB_KEYS[chroma]]?.find((c) => c.suffix === ref.quality.db)
   if (!entry) return []
-  const lowest = (s: Omit<Shape, 'label'>) => {
-    const pressed = s.frets.filter((f) => f > 0)
-    return pressed.length ? Math.min(...pressed) : 0
-  }
   // Formas com notas erradas no banco são trocadas pela versão ajustada
   // (ver chordFixes.ts); nenhuma forma é removida.
   const key = DB_KEYS[chroma]
@@ -253,6 +251,16 @@ export function shapesFor(ref: ChordRef): Shape[] {
     const fix = FIXES[shapeKey(key, entry.suffix, s.frets)]
     return fix ? fromFix(fix.frets, fix.fingers) : s
   })
+  return finish(shapes.map((s) => fixBarres(s, ref)), ref, chroma)
+}
+
+// Ordena (aberta primeiro, depois da casa mais baixa), dá o rótulo e marca
+// baixo/inversão de cada forma.
+function finish(shapes: Omit<Shape, 'label'>[], ref: ChordRef, chroma: number): Shape[] {
+  const lowest = (s: Omit<Shape, 'label'>) => {
+    const pressed = s.frets.filter((f) => f > 0)
+    return pressed.length ? Math.min(...pressed) : 0
+  }
   return shapes
     .sort((a, b) => Number(b.isOpen) - Number(a.isOpen) || lowest(a) - lowest(b))
     .map((s) => ({ ...s, label: positionLabel(s), rootless: !soundsChroma(s.frets, chroma), ...bassInfo(s.frets, ref) }))
@@ -263,13 +271,115 @@ export function shapesFor(ref: ChordRef): Shape[] {
     })
 }
 
+// Pestana que passa por uma corda abafada ou solta é impossível de tocar
+// (a pestana faria essa corda soar). Ajuste, nesta ordem:
+//  1. se a nota da pestana nessa corda é do acorde, a corda passa a soar;
+//  2. senão, a pestana sai: a corda mais grave dela continua presa, as outras
+//     que ela prendia continuam só se tiverem nota essencial que não aparece
+//     em outra corda, e os dedos são redistribuídos — desde que bastem 4.
+function fixBarres(s: Omit<Shape, 'label'>, ref: ChordRef): Omit<Shape, 'label'> {
+  const tones = new Set(Chord.get(chordTonalName(ref)).notes.map((n) => Note.chroma(n)))
+  const sound = (i: number, f: number) => (Note.midi(OPEN_STRINGS[i])! + f) % 12
+  let frets = [...s.frets]
+  let fingers = [...s.fingers]
+  const barres: Barre[] = []
+  for (const b of s.barres) {
+    const holes = []
+    for (let i = b.from; i <= b.to; i++) if (frets[i] < b.fret) holes.push(i)
+    if (!holes.length) {
+      barres.push(b)
+      continue
+    }
+    // 1. A corda passa a soar na casa da pestana, se a nota for do acorde.
+    if (holes.every((i) => tones.has(sound(i, b.fret)))) {
+      for (const i of holes) {
+        frets[i] = b.fret
+        fingers[i] = b.finger
+      }
+      barres.push(b)
+      continue
+    }
+    // 2. Sem pestana: o dedo fica só na corda mais grave dela.
+    const held = frets.flatMap((f, i) => (i >= b.from && i <= b.to && f === b.fret && fingers[i] === b.finger ? [i] : []))
+    const essential = new Set(essentialChromas(ref))
+    const tryFrets = [...frets]
+    for (const i of held.slice(1)) {
+      const note = sound(i, b.fret)
+      const elsewhere = tryFrets.some((f, k) => k !== i && f >= 0 && sound(k, f) === note)
+      if (!essential.has(note) || elsewhere) tryFrets[i] = -1
+    }
+    const heard = new Set(tryFrets.flatMap((f, i) => (f >= 0 ? [sound(i, f)] : [])))
+    const pressed = tryFrets.filter((f) => f > 0).length
+    if ([...essential].every((c) => heard.has(c)) && pressed <= 4 && tryFrets.filter((f) => f >= 0).length >= 3) {
+      frets = tryFrets
+      fingers = suggestFingers(tryFrets)
+    } else barres.push(b) // não deu para ajustar: fica como está (o verificador aponta)
+  }
+  return { ...s, frets, fingers, barres }
+}
+
+// Notas que o acorde não pode perder: todas, menos a quinta justa (e, no 13,
+// a 9ª e a 11ª), que no violão costumam ficar de fora.
+function essentialChromas(ref: ChordRef) {
+  const chord = Chord.get(chordTonalName(ref))
+  return chord.intervals
+    .filter((iv) => iv !== '5P' && iv !== '11P' && !(ref.quality.id === '13' && iv === '9M'))
+    .map((iv) => Note.chroma(Note.transpose(ref.root, iv))!)
+}
+
+// Inversão -> posição fundamental na mesma região: deixa de tocar as cordas
+// graves até a mais grave que soa ser a tônica. Só vale se sobrarem ao menos
+// 3 cordas e nenhuma nota essencial do acorde se perder.
+function toRootPosition(s: Shape, ref: ChordRef): Omit<Shape, 'label'> | null {
+  const root = Note.chroma(ref.root)!
+  const sound = (i: number) => (Note.midi(OPEN_STRINGS[i])! + s.frets[i]) % 12
+  const first = s.frets.findIndex((f, i) => f >= 0 && sound(i) === root)
+  if (first < 0) return null
+  const frets = s.frets.map((f, i) => (i < first ? -1 : f))
+  const heard = new Set(frets.flatMap((f, i) => (f >= 0 ? [sound(i)] : [])))
+  if (frets.filter((f) => f >= 0).length < 3 || !essentialChromas(ref).every((c) => heard.has(c))) return null
+  const fingers = s.fingers.map((d, i) => (i < first ? 0 : d))
+  // Pestanas: só sobre as cordas que continuam tocando.
+  const barres = s.barres.flatMap((b) => {
+    const on = frets.flatMap((f, i) => (i >= b.from && i <= b.to && f === b.fret && fingers[i] === b.finger ? [i] : []))
+    return on.length > 1 ? [{ ...b, from: Math.min(...on), to: Math.max(...on) }] : []
+  })
+  const pressed = frets.filter((f) => f > 0)
+  const isOpen = s.baseFret === 1 && frets.some((f) => f === 0)
+  return { frets, fingers, barres, baseFret: pressed.length ? s.baseFret : 1, isOpen }
+}
+
+/**
+ * Formas do acorde para a lista normal: na posição fundamental (tônica no
+ * baixo). As formas do banco que eram inversões são ajustadas na mesma região
+ * (as cordas graves abaixo da tônica deixam de ser tocadas). Se isso tirar
+ * alguma nota essencial, a forma continua como inversão, com o aviso.
+ * As inversões originais ficam no filtro "Inversões".
+ */
+export function shapesFor(ref: ChordRef): Shape[] {
+  const chroma = Note.chroma(ref.root)
+  if (chroma === undefined) return []
+  const bank = bankShapes(ref)
+  const seen = new Set(bank.filter((s) => (s.inversion ?? 0) <= 0).map((s) => s.frets.join()))
+  const out = bank.map((s) => {
+    if ((s.inversion ?? 0) <= 0) return s
+    const adj = toRootPosition(s, ref)
+    // Se o ajuste ficar igual a outra forma do acorde, mantemos a inversão
+    // (com o aviso) para não perder nenhuma forma.
+    if (!adj || seen.has(adj.frets.join())) return s
+    seen.add(adj.frets.join())
+    return adj
+  })
+  return finish(out, ref, chroma)
+}
+
 // Inversões de um acorde: as formas do banco com outra nota do acorde no
 // baixo, mais as formas "com barra" do banco (C/E, Am/C...) quando o baixo é
 // nota do acorde. Da mais grave para a mais aguda.
 export function inversionShapesFor(ref: ChordRef): Shape[] {
   const chroma = Note.chroma(ref.root)
   if (chroma === undefined) return []
-  const own = shapesFor(ref).filter((s) => (s.inversion ?? 0) > 0)
+  const own = bankShapes(ref).filter((s) => (s.inversion ?? 0) > 0)
   const prefix = ref.quality.id === 'maior' ? '/' : ref.quality.id === 'menor' ? 'm/' : null
   const slash = prefix
     ? (db.chords[DB_KEYS[chroma]] ?? [])

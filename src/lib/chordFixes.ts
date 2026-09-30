@@ -31,6 +31,10 @@ export const FIXES: Record<string, Fix> = {
   'F|/A|5,3,3,5,6,0': { frets: [5, 3, 3, 5, 6, -1], fingers: [2, 1, 1, 3, 4, 0], why: 'F/A: 1ª corda solta (E) deixa de ser tocada' },
   'B|aug|-1,14,13,12,12,0': { frets: [-1, 14, 13, 12, 12, -1], fingers: [0, 4, 3, 1, 2, 0], why: '1ª corda solta (E) deixa de ser tocada' },
 
+  // ---- Pestana passando por corda abafada (impossível de tocar) ----
+  'G|13|3,-1,3,4,5,5': { frets: [3, -1, 3, 4, 5, 5], fingers: [1, 0, 2, 3, 4, 4], why: 'sem pestana: dedo 1 na 6ª corda, 2 na 4ª, 3 na 3ª e 4 nas duas agudas' },
+  'Bb|m9|6,4,-1,5,6,4': { frets: [6, 8, 6, 6, 6, 8], fingers: [1, 3, 1, 1, 1, 4], why: 'refeita com pestana inteira na casa 6: Bb, F, Ab, Db, F, C' },
+
   // ---- Acordes de 13 com a 4ª (11ª), que não entra no 13 ----
   'C|13|3,3,3,3,5,5': { frets: [-1, 3, 2, 3, 5, 5], fingers: [0, 2, 1, 3, 4, 4], why: '4ª corda da casa 3 (F) para a 2 (E); 6ª corda não tocada' },
   'Csharp|13|-1,4,3,3,0,2': { frets: [-1, 4, 3, 3, 0, 1], fingers: [0, 4, 2, 3, 0, 1], why: '1ª corda da casa 2 (F#) para a 1 (F)' },

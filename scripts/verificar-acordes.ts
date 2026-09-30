@@ -17,7 +17,7 @@ const pc = (n: string) => Note.chroma(n)!
 // 11ª/13ª "de enfeite" nos acordes estendidos, como é comum no violão).
 const OPTIONAL = new Set(['5P', '11P'])
 
-function check(shape: Shape, tonalName: string) {
+function check(shape: Shape, tonalName: string, inInversions = false) {
   const chord = Chord.get(tonalName)
   const want = new Map(chord.intervals.map((iv, i) => [pc(chord.notes[i]), iv]))
   const problems: string[] = []
@@ -57,12 +57,22 @@ function check(shape: Shape, tonalName: string) {
   const needed = new Set(shape.frets.map((f, s) => (f > 0 ? `${shape.fingers[s]}` : '')).filter(Boolean))
   if (shape.fingers.every((d) => d === 0) && pressed.length) problems.push('DEDOS: forma sem digitação')
   if (needed.size > 4) problems.push('DEDOS: precisa de mais de 4 dedos')
+  // Pestana: toda corda debaixo dela precisa estar presa nessa casa ou acima
+  // (corda solta ou abafada no meio da pestana é impossível).
+  for (const b of shape.barres) {
+    for (let i = b.from; i <= b.to; i++) {
+      if (shape.frets[i] < b.fret) problems.push(`DEDOS: pestana na casa ${b.fret} passa pela ${6 - i}ª corda, que está ${shape.frets[i] < 0 ? 'abafada' : shape.frets[i] === 0 ? 'solta' : 'numa casa mais baixa'}`)
+    }
+  }
+  // Tônica fora do baixo na lista normal = inversão (só vale no filtro Inversões).
+  if (!inInversions && (shape.inversion ?? 0) > 0) problems.push(`AVISO: inversão na lista normal (${shape.bass} no baixo)`)
 
   return problems
 }
 
 let total = 0
 let bad = 0
+let warn = 0
 const report: string[] = []
 for (const r of ROOTS) {
   for (const q of QUALITIES) {
@@ -75,10 +85,12 @@ for (const r of ROOTS) {
     // As inversões usam também as formas "com barra" do banco (C/E, Am/C...).
     const inversions = inversionShapesFor(ref).filter((x) => !shapes.some((y) => y.frets.join() === x.frets.join()))
     ;[...shapes, ...inversions].forEach((sh, i) => {
+      const isInv = i >= shapes.length
       total++
-      const p = check(sh, chordTonalName(ref))
+      const p = check(sh, chordTonalName(ref), isInv)
       if (p.length) {
-        bad++
+        if (p.every((x) => x.startsWith('AVISO'))) warn++
+        else bad++
         const tab = sh.frets.map((f) => (f < 0 ? 'x' : f)).join(' ')
         report.push(`${chordDisplayName(ref).padEnd(10)} #${i + 1} ${sh.label.padEnd(10)} [${tab}]  ${p.join(' | ')}`)
       }
@@ -86,4 +98,4 @@ for (const r of ROOTS) {
   }
 }
 console.log(report.join('\n'))
-console.log(`\n${bad} de ${total} formas com problema`)
+console.log(`\n${bad} de ${total} formas com problema · ${warn} avisos (inversões que não dá para levar à posição fundamental)`)
