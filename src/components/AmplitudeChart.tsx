@@ -369,6 +369,7 @@ export function AmplitudeChart({ beats, active, onPick, onNotes, beforeSave }: P
     let lastUi = 0
     let lastDetect = 0
     let prevNotes = new Set<number>()
+    let prevNotes2 = new Set<number>()
 
     const loop = () => {
       analyser.getFloatTimeDomainData(wave)
@@ -389,8 +390,10 @@ export function AmplitudeChart({ beats, active, onPick, onNotes, beforeSave }: P
         const result = detector.update(frame, db, dt)
         // Notas para o violão virtual: só as que o "Tocando agora" confirma, sem harmônicos.
         const now = db >= LIVE_GATE_DB ? pickNotes(frame, result) : []
-        // Só vale a nota que aparece em duas análises seguidas (evita "piscadas" no ataque).
-        onNotesRef.current?.(now.filter((m) => prevNotes.has(m)), result)
+        // Só vale a nota que aparece em três análises seguidas (~0,4 s): ruídos
+        // e "piscadas" do ataque não duram tanto.
+        onNotesRef.current?.(now.filter((m) => prevNotes.has(m) && prevNotes2.has(m)), result)
+        prevNotes2 = prevNotes
         prevNotes = new Set(now)
         const label = liveLabel(result)
         if (label !== lastLabel) {

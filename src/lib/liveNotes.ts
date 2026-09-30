@@ -18,7 +18,7 @@ import type { Frame } from './recognize'
 // ---------------------------------------------------------------------------
 
 /** Força mínima, em fração da fundamental mais forte do quadro. */
-const MIN_STRENGTH = 0.5
+const MIN_STRENGTH = 0.6
 /** Distância máxima da nota exata (0,25 = 25 cents). */
 const MAX_DETUNE = 0.25
 /** Faixa do violão: um pouco abaixo de E2 até ~E6. */
@@ -44,6 +44,8 @@ const HARMONICS = [12, 19, 24, 28]
 const ABSENT = 0.15
 /** Força mínima para contar como harmônico presente. */
 const HARMONIC_MIN = 0.2
+/** Uma nota acima de outra (2×, 3×, 4×, 5×) é harmônico se a de baixo tiver ao menos 80% da força dela. */
+const HARMONIC_RATIO = 0.8
 
 export function pickNotes(frame: Frame, live: LiveResult): number[] {
   const allowed = allowedPcs(live)
@@ -79,6 +81,12 @@ export function pickNotes(frame: Frame, live: LiveResult): number[] {
     for (const h of HARMONICS) drop.add(r + h)
   }
   chosen = [...chosen.filter(([m]) => !drop.has(m)), ...add.entries()]
+
+  // Harmônicos de menor intensidade: uma nota que fica 1 ou 2 oitavas, uma
+  // oitava + quinta ou duas oitavas + terça (2×, 3×, 4×, 5× da frequência)
+  // acima de outra nota escolhida, e soa mais fraca que ela, é harmônico dela.
+  const force = new Map(chosen)
+  chosen = chosen.filter(([m, v]) => !HARMONICS.some((h) => (force.get(m - h) ?? 0) >= v * HARMONIC_RATIO))
 
   // Uma nota só (ex.: "A3"): acende uma posição só, da mesma nota do quadro,
   // na oitava mais grave que sobrou (a de cima costuma ser harmônico).

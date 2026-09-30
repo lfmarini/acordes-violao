@@ -14,11 +14,11 @@ import { PC_NAMES, rankChords, type Frame } from './recognize'
 // ---------------------------------------------------------------------------
 
 /** Abaixo deste volume (dBFS) consideramos silêncio. */
-export const LIVE_GATE_DB = -50
+export const LIVE_GATE_DB = -48
 /** Quanto tempo (s) o som "fica na memória" da análise. */
 const MEMORY_S = 0.7
 /** Uma nota conta se tiver ao menos esta fração da força da mais forte. */
-const PRESENT = 0.3
+const PRESENT = 0.4
 /** Confiança mínima para afirmar um acorde. */
 const CHORD_MIN = 0.35
 
